@@ -57,13 +57,13 @@
 	"dependencies": {
 		"@octokit/core": "^7.0.8",
 		"@octokit/plugin-retry": "^8.1.1",
-		"ignore": "^7.0.8"
+		"ignore": "^7.0.9"
 	},
 	"devDependencies": {
 		"@arethetypeswrong/cli": "^0.18.5",
 		"@mawesome/testing": "workspace:*",
 		"@mawesome/tsconfig": "workspace:*",
-		"@types/node": "^26.4.1",
+		"@types/node": "^26.5.1",
 		"@typescript/native-preview": "7.0.0-dev.20260527.2",
 		"publint": "^0.3.24",
 		"tsdown": "^0.23.0",
