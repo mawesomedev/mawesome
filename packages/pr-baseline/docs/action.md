@@ -13,8 +13,18 @@ name: PR baseline
 # Replace every BASE below with your base branch (for example main). The env context is unavailable
 # in a job-level `if`, so the branch name is a literal in the marked places.
 on:
+  # Public repositories block `pull_request_target` by default from 2 November 2026.
+  # Allow it for this workflow file under Settings > Actions > Policies to keep the instant per-PR status.
+  # The job below checks nothing out and never runs PR code, which is the risk the block exists for.
+  # Where the block stays, comment this trigger out and uncomment `pull_request` below.
+  # Never enable both: a same-repo PR would then fire two runs.
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
+  # The fallback stamps a same-repo PR as before, with two gaps the backfill job at the bottom covers.
+  # A fork PR is not stamped at all: its run's token is read-only and the repository's secrets are withheld, so a custom token does not lift it.
+  # A PR carrying a merge conflict fires no `pull_request` run at all, where `pull_request_target` still runs.
+  #pull_request:
+  #  types: [opened, synchronize, reopened, ready_for_review, edited]
   merge_group:
   push:
     branches: [BASE]
@@ -45,7 +55,7 @@ jobs:
     name: Refresh the PR status against the baseline
     if: >-
       !github.event.repository.fork &&
-      (github.event_name == 'merge_group' || (github.event_name == 'pull_request_target' && github.event.action != 'closed'))
+      (github.event_name == 'merge_group' || ((github.event_name == 'pull_request_target' || github.event_name == 'pull_request') && github.event.action != 'closed'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -100,9 +110,13 @@ jobs:
 # count fall. Keep it permanently only if the repository uses Dependabot AND stays on the default
 # GITHUB_TOKEN, whose Dependabot runs cannot write. A custom App or PAT token is the better fix, but it
 # must be stored as a Dependabot secret too: a Dependabot run cannot read the repository's Actions secrets.
-# It needs its own daily tick: add `- cron: '23 4 * * *'` under `on.schedule` above. Each job matches
-# its own cron, so the two never start together; they still share the hour's write budget, which is
-# what the two caps below and above are sized for.
+# Keep it permanently as well when this workflow runs on `pull_request` in a public repository.
+# A fork PR and a conflicted PR are reached by nothing else there, so pick a cron a required check can wait for.
+# It needs its own tick: the example below is `- cron: '23 4 * * *'` under `on.schedule` above.
+# Whichever cron you pick goes in both places, because the job's `if` tests for that exact string.
+# Pick one that never coincides with the refresh's `17 * * * *`, which two different strings can still do.
+# Each job matches its own cron, so the two then never start together.
+# They still share the hour's write budget, which is what the two caps below and above are sized for.
 #  backfill:
 #    name: Stamp the PRs that have no status yet
 #    if: ${{ !github.event.repository.fork && github.event.schedule == '23 4 * * *' }}
@@ -136,20 +150,28 @@ jobs:
 
 The `refresh-pr-status` job serves PR and merge-queue events, the `refresh-pr-statuses` job serves base pushes, labeled merges, the schedule and dispatches. `BASE` is a literal in the marked places because the `env` context is unavailable in a job-level `if`. The baseline list is defined once in the workflow-level `env` and read by both steps. Both jobs carry a `!github.event.repository.fork` guard, the `refresh-pr-status` job never checks out code, and the `refresh-pr-statuses` job checks out a treeless full-history clone with `persist-credentials: false`; the action authenticates its own fetches. Job names must not resemble the status context; require the context, not the job.
 
+## Workflow execution protections
+
+GitHub blocks `pull_request_target` in public repositories by default from 2 November 2026, under [workflow execution protections](https://docs.github.com/en/organizations/managing-organization-settings/actions-policies/workflow-execution-protections). A blocked run never starts, so the baseline status simply stops appearing on new PRs; the schedule keeps moving baselines either way. Private and internal repositories are unaffected.
+
+Allow the event for this workflow file in an Actions event policy (Settings > Actions > Policies). The `refresh-pr-status` job checks nothing out and never runs PR code, which is the risk the default block exists for.
+
+Where the policy stays, swap the trigger for `pull_request` as the template shows. A same-repo PR is stamped as before, with two gaps. A fork PR is not stamped at all: its run's token is read-only and the repository's secrets are withheld, so a custom App or PAT token does not lift the restriction either. A PR carrying a merge conflict fires no `pull_request` run at all, where `pull_request_target` still runs. Neither is reached by its own event, only by a refresh that covers unstamped PRs (`scope: unstamped`, or `all`), so enable the template's backfill job on a cron a required check can wait for, or dispatch one by hand; until it runs, those PRs sit on "Expected". Enabling both triggers is not a middle ground: a same-repo PR would fire two runs.
+
 ## Modes
 
 `mode` is `auto` (default), `refresh-pr-status`, `refresh-pr-statuses`, `move-baseline` or `report`. In `auto` the event decides:
 
-| Event                                                  | Mode                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pull_request_target`, any type except `closed`        | `refresh-pr-status` on the payload head SHA, reporting on. The supported write path for fork PRs.                                                                                                                                                                                                                                        |
-| `pull_request_target` type `closed`, `merged == true`  | `move-baseline --refresh-pr-statuses`, the immediate path for a labeled merge. The refresh is suppressed when no baseline ref changed, since a merge also fires `push`.                                                                                                                                                                  |
-| `pull_request_target` type `closed`, `merged == false` | No-op with a notice.                                                                                                                                                                                                                                                                                                                     |
-| `pull_request`                                         | `refresh-pr-status`; with the workflow token the status is written only for a same-repository PR not triggered by Dependabot, since the token is read-only otherwise. Any other token writes. A payload without a PR is a no-op.                                                                                                         |
-| `merge_group`                                          | `refresh-pr-status` on `merge_group.head_sha` when `merge_group.base_ref` is the base branch; otherwise the `other-bases` rule applies, so a queue for another branch is skipped by default.                                                                                                                                             |
-| `push` to the base branch                              | `move-baseline --refresh-pr-statuses` for path markers and merges made without a `pull_request_target` run, with the refresh suppressed when no baseline ref changed, so a push that moved nothing costs only the checkout and the move decision. The base defaults to the payload's default branch; a push to any other ref is a no-op. |
-| `schedule`                                             | `move-baseline --refresh-pr-statuses`, non-forced, and the refresh runs whether or not anything moved: this is the net under a lost, paused or suppressed run, and the only thing that converges drift no move reports.                                                                                                                  |
-| `workflow_dispatch`                                    | The same non-forced `move-baseline --refresh-pr-statuses` as `schedule`. The template's `mode` choice input passes `move-baseline` with `force` or `refresh-pr-statuses` explicitly, so the action never reads dispatch inputs.                                                                                                          |
+| Event                                                  | Mode                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pull_request_target`, any type except `closed`        | `refresh-pr-status` on the payload head SHA, reporting on. The supported write path for fork PRs, where the repository's event policy allows the trigger.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `pull_request_target` type `closed`, `merged == true`  | `move-baseline --refresh-pr-statuses`, the immediate path for a labeled merge. The refresh is suppressed when no baseline ref changed, since a merge also fires `push`.                                                                                                                                                                                                                                                                                                                                                                                      |
+| `pull_request_target` type `closed`, `merged == false` | No-op with a notice.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `pull_request`                                         | `refresh-pr-status`; with the workflow token the status is written only for a same-repository PR not triggered by Dependabot, since the token is read-only otherwise. Any other token writes. On a fork in `auto` mode an empty token, which is what a secret gives a fork run, is a no-op; any path that reaches the client still treats an empty token as an error. A payload without a PR is a no-op. Without a usable custom token, a fork PR on this trigger, and a PR carrying a merge conflict, are reached only by a refresh covering unstamped PRs. |
+| `merge_group`                                          | `refresh-pr-status` on `merge_group.head_sha` when `merge_group.base_ref` is the base branch; otherwise the `other-bases` rule applies, so a queue for another branch is skipped by default.                                                                                                                                                                                                                                                                                                                                                                 |
+| `push` to the base branch                              | `move-baseline --refresh-pr-statuses` for path markers and merges made without a `pull_request_target` run, with the refresh suppressed when no baseline ref changed, so a push that moved nothing costs only the checkout and the move decision. The base defaults to the payload's default branch; a push to any other ref is a no-op.                                                                                                                                                                                                                     |
+| `schedule`                                             | `move-baseline --refresh-pr-statuses`, non-forced, and the refresh runs whether or not anything moved: this is the net under a lost, paused or suppressed run, and the only thing that converges drift no move reports.                                                                                                                                                                                                                                                                                                                                      |
+| `workflow_dispatch`                                    | The same non-forced `move-baseline --refresh-pr-statuses` as `schedule`. The template's `mode` choice input passes `move-baseline` with `force` or `refresh-pr-statuses` explicitly, so the action never reads dispatch inputs.                                                                                                                                                                                                                                                                                                                              |
 
 An explicit `mode` takes the inputs as given, with one rule still coming from the event: a pinned `mode: move-baseline` on a base-branch push or a merged `pull_request_target` skips its refresh when no baseline ref changed, exactly as `auto` does.
 

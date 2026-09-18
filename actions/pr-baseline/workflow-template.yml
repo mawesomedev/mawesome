@@ -2,8 +2,18 @@ name: PR baseline
 # Replace every BASE below with your base branch (for example main). The env context is unavailable
 # in a job-level `if`, so the branch name is a literal in the marked places.
 on:
+  # Public repositories block `pull_request_target` by default from 2 November 2026.
+  # Allow it for this workflow file under Settings > Actions > Policies to keep the instant per-PR status.
+  # The job below checks nothing out and never runs PR code, which is the risk the block exists for.
+  # Where the block stays, comment this trigger out and uncomment `pull_request` below.
+  # Never enable both: a same-repo PR would then fire two runs.
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
+  # The fallback stamps a same-repo PR as before, with two gaps the backfill job at the bottom covers.
+  # A fork PR is not stamped at all: its run's token is read-only and the repository's secrets are withheld, so a custom token does not lift it.
+  # A PR carrying a merge conflict fires no `pull_request` run at all, where `pull_request_target` still runs.
+  #pull_request:
+  #  types: [opened, synchronize, reopened, ready_for_review, edited]
   merge_group:
   push:
     branches: [BASE]
@@ -34,7 +44,7 @@ jobs:
     name: Refresh the PR status against the baseline
     if: >-
       !github.event.repository.fork &&
-      (github.event_name == 'merge_group' || (github.event_name == 'pull_request_target' && github.event.action != 'closed'))
+      (github.event_name == 'merge_group' || ((github.event_name == 'pull_request_target' || github.event_name == 'pull_request') && github.event.action != 'closed'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -89,9 +99,13 @@ jobs:
 # count fall. Keep it permanently only if the repository uses Dependabot AND stays on the default
 # GITHUB_TOKEN, whose Dependabot runs cannot write. A custom App or PAT token is the better fix, but it
 # must be stored as a Dependabot secret too: a Dependabot run cannot read the repository's Actions secrets.
-# It needs its own daily tick: add `- cron: '23 4 * * *'` under `on.schedule` above. Each job matches
-# its own cron, so the two never start together; they still share the hour's write budget, which is
-# what the two caps below and above are sized for.
+# Keep it permanently as well when this workflow runs on `pull_request` in a public repository.
+# A fork PR and a conflicted PR are reached by nothing else there, so pick a cron a required check can wait for.
+# It needs its own tick: the example below is `- cron: '23 4 * * *'` under `on.schedule` above.
+# Whichever cron you pick goes in both places, because the job's `if` tests for that exact string.
+# Pick one that never coincides with the refresh's `17 * * * *`, which two different strings can still do.
+# Each job matches its own cron, so the two then never start together.
+# They still share the hour's write budget, which is what the two caps below and above are sized for.
 #  backfill:
 #    name: Stamp the PRs that have no status yet
 #    if: ${{ !github.event.repository.fork && github.event.schedule == '23 4 * * *' }}

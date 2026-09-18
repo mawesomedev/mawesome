@@ -63,7 +63,7 @@ For the second, which is the recommended seed:
 
 ## What "Expected" means
 
-A required status context that no run has written yet shows as "Expected" and blocks the PR. This happens when the context is required on a branch the tool does not serve, when the refresh never reached a PR, or when the `refresh-pr-status` job did not run for an event. Require the context only in the base branch's ruleset, and dispatch a refresh to stamp whatever is missing.
+A required status context that no run has written yet shows as "Expected" and blocks the PR. This happens when the context is required on a branch the tool does not serve, when the refresh never reached a PR, or when the `refresh-pr-status` job did not run for an event. Require the context only in the base branch's ruleset, and dispatch a refresh with `scope: unstamped` to stamp whatever is missing; the default `corrections` scope visits only the PRs that already carry a status.
 
 ## Silent schedule loss
 

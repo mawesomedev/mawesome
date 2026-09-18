@@ -242,7 +242,16 @@ function auto(event: Event, base: string | undefined, token: TokenKind): Plan {
 					skip: 'pull_request event without a pull_request payload, which happens for some fork PRs; nothing to do.',
 				};
 			}
-			const report = canWriteOnPullRequest(pull.head.repo, repository, token);
+			const fork = isFork(pull.head.repo, repository);
+			/* A fork's run is denied the repository's secrets, so a token set from one arrives empty.
+			 * Failing for a missing token would put a red X on every fork PR, and nothing could be written anyway. */
+			if (fork && core.getInput('token').length === 0) {
+				return {
+					mode: 'refresh-pr-status',
+					skip: 'The token input is empty, which is what a fork pull_request run gets from a secret; nothing can be written. Report on fork PRs through pull_request_target, or through a refresh with scope: unstamped.',
+				};
+			}
+			const report = canWriteOnPullRequest(fork, token);
 			return { mode: 'refresh-pr-status', sha: pull.head.sha, baseRef: pull.base.ref, report };
 		}
 		case 'merge_group': {
@@ -292,23 +301,27 @@ function auto(event: Event, base: string | undefined, token: TokenKind): Plan {
 	}
 }
 
-/** The workflow token is read-only on a fork PR; any other token is the consumer's choice and is assumed to write. */
-function canWriteOnPullRequest(
+/** The head repository differs from the one the run belongs to, or the payload dropped it altogether. */
+function isFork(
 	head: { full_name?: string } | null,
 	repository: { full_name?: string } | undefined,
-	token: TokenKind,
 ): boolean {
-	if (token === 'custom') {
-		return true;
-	}
-	const fork =
+	return (
 		head === null ||
 		(head.full_name !== undefined &&
 			repository?.full_name !== undefined &&
-			head.full_name.toLowerCase() !== repository.full_name.toLowerCase());
+			head.full_name.toLowerCase() !== repository.full_name.toLowerCase())
+	);
+}
+
+/** The workflow token is read-only on a fork PR; any other token is the consumer's choice and is assumed to write. */
+function canWriteOnPullRequest(fork: boolean, token: TokenKind): boolean {
+	if (token === 'custom') {
+		return true;
+	}
 	if (fork) {
 		core.notice(
-			'A pull_request run from a fork cannot write statuses; outputs are set and nothing is written. Use pull_request_target to report on fork PRs.',
+			'A pull_request run from a fork cannot write statuses; outputs are set and nothing is written. Report on fork PRs through pull_request_target, which a public repository has to allow in an Actions event policy, or through a refresh with scope: unstamped.',
 		);
 	}
 	return !fork;

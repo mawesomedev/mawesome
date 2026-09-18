@@ -269,6 +269,17 @@ describe('action mode: auto', () => {
 		runner({ event: 'pull_request', payload, inputs: { token: 'personal-token' } });
 		await run();
 		expect(outputs()['written']).toBe('1');
+		/* A fork run is denied the repository's secrets, so a token set from one arrives empty;
+		 * an unstamped head proves nothing is written rather than the write being a no-op. */
+		const withheld = pullPayload(sha(13));
+		(withheld['pull_request'] as { head: { repo: { full_name: string } } }).head.repo = {
+			full_name: 'someone/widgets',
+		};
+		runner({ event: 'pull_request', payload: withheld, inputs: { token: '' } });
+		await run();
+		expect(outputs()['state']).toBe('skipped');
+		expect(outputs()['written']).toBe('0');
+		expect(world.github.requests(/\/statuses\//, 'POST')).toHaveLength(1);
 	});
 
 	it('writes on a same-repository pull_request unless Dependabot triggered it', async () => {

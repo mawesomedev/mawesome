@@ -3,6 +3,8 @@ name: PR baseline
 # The refresh-pr-status job checks out the base branch, never the PR head, so PR code does not run under pull_request_target.
 on:
   # The refresh-pr-status job runs the base branch's code only; the trigger is what lets fork PRs receive a status.
+  # A public repository blocks this event by default from 2 November 2026; the `pr-target-for-pr-baseline` policy allows it.
+  # That policy is an exhaustive allowlist scoped to this file, so a trigger added below has to be added there too or it never fires.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
     types: [opened, synchronize, reopened, ready_for_review, edited, closed]
   merge_group:
