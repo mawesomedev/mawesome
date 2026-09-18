@@ -6,7 +6,7 @@ on:
   # A public repository blocks this event by default from 2 November 2026; the `pr-target-for-pr-baseline` policy allows it.
   # That policy is an exhaustive allowlist scoped to this file, so a trigger added below has to be added there too or it never fires.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
-    types: [opened, synchronize, reopened, ready_for_review, edited, closed]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   merge_group:
   push:
     branches: [main]
@@ -70,9 +70,9 @@ jobs:
           baselines: ${{ env.PR_BASELINES }}
   refresh-pr-statuses:
     name: Move baselines and refresh PR statuses
+    # A merge fires `push` on main at the same moment, so a `closed` trigger would only queue this twice.
     if: >-
       !github.event.repository.fork && (
-        (github.event_name == 'pull_request_target' && github.event.action == 'closed' && github.event.pull_request.merged) ||
         (github.event_name == 'push' && github.ref_name == 'main') ||
         github.event_name == 'schedule' ||
         github.event_name == 'workflow_dispatch'
