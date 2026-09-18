@@ -1,6 +1,6 @@
 {
 	"name": "@mawesome/pr-baseline-action",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"private": true,
 	"description": "GitHub Action that keeps open pull requests current with a movable baseline on the base branch",
 	"license": "MIT",
