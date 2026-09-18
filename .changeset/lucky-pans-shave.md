@@ -2,4 +2,4 @@
 '@mawesome/pr-baseline-action': patch
 ---
 
-Document the workflow execution protections that block `pull_request_target` in public repositories from 2 November 2026, and give the workflow template a `pull_request` fallback. On that fallback a fork run, whose token a withheld secret leaves empty, now skips instead of failing.
+`pull_request_target` is blocked by default in public repositories from 2 November 2026, which stops the per-PR status unless an Actions event policy allows it. The workflow template now carries a `pull_request` fallback, on which a fork run, whose token a withheld secret leaves empty, skips instead of failing.
