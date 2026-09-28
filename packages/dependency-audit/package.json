@@ -73,17 +73,17 @@
 		"check:exports": "attw --pack . --profile node16 && publint --strict"
 	},
 	"dependencies": {
-		"npm-packlist": "^10.0.4",
-		"pacote": "^21.5.1",
+		"npm-packlist": "^11.3.0",
+		"pacote": "^22.0.0",
 		"resolve.exports": "^2.0.3",
 		"tar": "^7.5.22",
 		"tinyglobby": "^0.2.17",
-		"typescript": "^6.0.3"
+		"typescript": "^7.0.2"
 	},
 	"devDependencies": {
 		"@arethetypeswrong/cli": "^0.18.5",
 		"@mawesome/tsconfig": "workspace:*",
-		"@types/node": "^26.4.1",
+		"@types/node": "^26.6.2",
 		"@types/pacote": "^11.1.8",
 		"@typescript/native-preview": "7.0.0-dev.20260527.2",
 		"publint": "^0.3.24",

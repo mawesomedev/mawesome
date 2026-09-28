@@ -13,16 +13,16 @@
 		"parity": "node scripts/parity.ts"
 	},
 	"dependencies": {
-		"@astrojs/starlight": "^0.42.0",
+		"@astrojs/starlight": "^0.42.4",
 		"@mawesome/dependency-audit": "workspace:*",
 		"@mawesome/pr-baseline": "workspace:*",
 		"@mawesome/pr-baseline-action": "workspace:*",
-		"astro": "^7.3.1",
+		"astro": "^7.3.5",
 		"nanotar": "^0.3.0",
 		"pathe": "^2.0.3"
 	},
 	"devDependencies": {
 		"@astrojs/check": "^0.9.10",
-		"typescript": "^6.0.3"
+		"typescript": "^7.0.2"
 	}
 }
