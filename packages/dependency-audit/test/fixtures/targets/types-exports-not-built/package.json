@@ -1,0 +1,9 @@
+{
+	"name": "@fixture/types-exports-not-built",
+	"version": "1.0.0",
+	"type": "module",
+	"types": "build-types",
+	"exports": {
+		".": "./lib/index.js"
+	}
+}

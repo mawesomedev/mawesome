@@ -1,0 +1,11 @@
+{
+	"name": "@fixture/types-ignored-by-exports",
+	"version": "1.0.0",
+	"type": "module",
+	"main": "lib/index.js",
+	"types": "build-types",
+	"exports": {
+		".": "./lib/index.js",
+		"./package.json": "./package.json"
+	}
+}
