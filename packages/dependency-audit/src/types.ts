@@ -98,10 +98,12 @@ export interface UncheckedSpecifier {
  * "nothing to audit."
  * - `types-not-built`: the manifest declares type declarations, but none resolve from
  *   the package root (the build output is missing — build before auditing).
+ * - `types-ignored-by-exports`: a `types`/`typings` field resolves, but `exports` is present,
+ *   so TypeScript ignores that field and finds no declarations through `exports`.
  * - `types-unreachable`: the package ships `.d.ts` files, but no `types` field or
  *   `exports` `types` condition exposes them (a likely packaging gap).
  */
-export type NoticeKind = 'types-not-built' | 'types-unreachable';
+export type NoticeKind = 'types-not-built' | 'types-ignored-by-exports' | 'types-unreachable';
 
 /** A non-fatal coverage notice: a surface that could not be analyzed, and why. */
 export interface Notice {

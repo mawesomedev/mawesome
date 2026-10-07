@@ -32,6 +32,23 @@ describe('audit (type-surface coverage notices)', () => {
 		expect(result.ok).toBe(true);
 	});
 
+	it('notices when `exports` hides a built `types` directory field', async () => {
+		const result = await run('types-ignored-by-exports');
+		expect(result.notices).toHaveLength(1);
+		expect(result.notices[0]).toMatchObject({ kind: 'types-ignored-by-exports', surface: 'types' });
+		expect(result.ok).toBe(true);
+	});
+
+	it('still notices a missing build when `exports` is present and the `types` field is unbuilt', async () => {
+		const result = await run('types-exports-not-built');
+		expect(result.notices[0]).toMatchObject({ kind: 'types-not-built', surface: 'types' });
+	});
+
+	it('blames the build, not the field, when an `exports` types condition is unbuilt', async () => {
+		const result = await run('types-exports-condition-not-built');
+		expect(result.notices[0]).toMatchObject({ kind: 'types-not-built', surface: 'types' });
+	});
+
 	it('notices when shipped .d.ts files are not exposed by the manifest', async () => {
 		const result = await run('types-unreachable');
 		expect(result.notices[0]).toMatchObject({ kind: 'types-unreachable', surface: 'types' });

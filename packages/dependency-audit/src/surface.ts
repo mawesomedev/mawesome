@@ -30,10 +30,11 @@ export interface ExternalSpecifier {
  * Whether the type surface had anything to analyze:
  * - `covered` — at least one declaration entry point resolved and was scanned;
  * - `not-built` — types are declared but none resolve (build output missing);
+ * - `ignored-by-exports`: a `types`/`typings` field resolves, but `exports` hides it from TypeScript;
  * - `unreachable` — `.d.ts` ship but no manifest entry exposes them;
  * - `none` — the package legitimately declares and ships no types.
  */
-export type TypeCoverage = 'covered' | 'not-built' | 'unreachable' | 'none';
+export type TypeCoverage = 'covered' | 'not-built' | 'ignored-by-exports' | 'unreachable' | 'none';
 
 /** The discovered type surface: scanned files and the specifiers they reference. */
 export interface SurfaceScan {
@@ -127,6 +128,16 @@ function typeCoverage(
 ): TypeCoverage {
 	if (scannedAny) {
 		return 'covered';
+	}
+	// TS skips `types`/`typings` when `exports` exists, so a built legacy entry is hidden, not missing.
+	if (
+		manifest.exports !== undefined &&
+		!exportsDeclaresTypes(manifest.exports) &&
+		[manifest.types, manifest.typings].some(
+			(target) => legacyDeclarationPath(fs, root, target, published) !== undefined,
+		)
+	) {
+		return 'ignored-by-exports';
 	}
 	// A declared types entry that did not resolve means the build output is absent.
 	if (manifestDeclaresTypes(manifest)) {
@@ -302,6 +313,31 @@ function allDeclarationFiles(
 		}
 	}
 	return out;
+}
+
+/**
+ * Resolves a legacy `types`/`typings` target the way TypeScript's node10 lookup does.
+ * An extensionless target tries `<target>.d.ts`, then `<target>/index.d.ts` for a directory.
+ */
+function legacyDeclarationPath(
+	fs: FileSystem,
+	root: string,
+	target: string | undefined,
+	published: (abs: string) => boolean,
+): string | undefined {
+	if (target === undefined) {
+		return undefined;
+	}
+	const dts = toDeclarationPath(target);
+	const bare = target.replace(/\/+$/, '');
+	const candidates = dts === undefined ? [`${bare}.d.ts`, `${bare}/index.d.ts`] : [dts];
+	for (const candidate of candidates) {
+		const abs = resolve(root, candidate);
+		if (isWithin(root, abs) && fs.isFile(abs) && published(abs)) {
+			return abs;
+		}
+	}
+	return undefined;
 }
 
 /** Maps a runtime or declaration target to its declaration-file form, or `undefined`. */

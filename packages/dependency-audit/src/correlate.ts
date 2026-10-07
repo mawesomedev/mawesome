@@ -1,7 +1,11 @@
 import type { AuditResult, Finding, NoticeKind } from './types.ts';
 
 /** The coverage-notice kinds that mean a producer's own types are missing/unreachable. */
-const COVERAGE_NOTICES = new Set<NoticeKind>(['types-not-built', 'types-unreachable']);
+const COVERAGE_NOTICES = new Set<NoticeKind>([
+	'types-not-built',
+	'types-ignored-by-exports',
+	'types-unreachable',
+]);
 
 /** The consumer finding kinds a producer's coverage gap can explain (package declared, types don't resolve). */
 const CORRELATABLE_KINDS = new Set(['missing-types', 'types-unavailable']);

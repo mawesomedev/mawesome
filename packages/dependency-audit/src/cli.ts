@@ -48,7 +48,7 @@ Options:
                     materialize at once (default: 6 targets x 12 deps). Lower it
                     to ease load on a large batch; --concurrency 1 runs fully
                     serially. Also via DEPENDENCY_AUDIT_CONCURRENCY.
-  --require-types   Treat a missing/unreachable type surface (a coverage notice)
+  --require-types   Treat a missing/hidden/unreachable type surface (a coverage notice)
                     as a failure rather than just a notice.
   --collapse-root-cause  In a multi-target run, don't fail on a finding whose
                     root cause is another audited target (its types aren't
