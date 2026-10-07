@@ -132,6 +132,7 @@ function typeCoverage(
 	// TS skips `types`/`typings` when `exports` exists, so a built legacy entry is hidden, not missing.
 	if (
 		manifest.exports !== undefined &&
+		!exportsDeclaresTypes(manifest.exports) &&
 		[manifest.types, manifest.typings].some(
 			(target) => legacyDeclarationPath(fs, root, target, published) !== undefined,
 		)

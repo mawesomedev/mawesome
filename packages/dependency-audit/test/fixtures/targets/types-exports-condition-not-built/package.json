@@ -1,0 +1,12 @@
+{
+	"name": "@fixture/types-exports-condition-not-built",
+	"version": "1.0.0",
+	"type": "module",
+	"types": "build-types",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./lib/index.js"
+		}
+	}
+}

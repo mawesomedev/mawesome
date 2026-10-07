@@ -17,7 +17,7 @@ The tool aims for **correct, narrow** results: when it reports a finding it is r
 
 ### "It reports all clean, but a package I expected wasn't really checked."
 
-Look for an `ℹ` notice on that package. A [`types-not-built`](./findings.md#notices) notice means its type surface was empty because the build output is missing — **build it first**. A `types-ignored-by-exports` notice means its `types` field is built but hidden by `exports`. A `types-unreachable` notice means it ships `.d.ts` but no `types`/`exports` condition exposes them. A package that legitimately has no types (a Babel/PostCSS plugin) correctly shows nothing. Use `--require-types` to make missing/unreachable types a hard failure across a monorepo.
+Look for an `ℹ` notice on that package. A [`types-not-built`](./findings.md#notices) notice means its type surface was empty because the build output is missing — **build it first**. A `types-ignored-by-exports` notice means its `types`/`typings` field is built but hidden by `exports`. A `types-unreachable` notice means it ships `.d.ts` but no `types`/`exports` condition exposes them. A package that legitimately has no types (a Babel/PostCSS plugin) correctly shows nothing. Use `--require-types` to make missing/unreachable types a hard failure across a monorepo.
 
 ### "A finding points at a subpath I'm sure exists."
 

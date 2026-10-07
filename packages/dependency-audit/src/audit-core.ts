@@ -234,7 +234,7 @@ function typeCoverageNotices(coverage: TypeCoverage): Notice[] {
 				kind: 'types-ignored-by-exports',
 				surface: 'types',
 				message:
-					'declares a "types" field, but "exports" is present, so TypeScript ignores it and resolves no types; add a "types" condition to "exports" (or ship a .d.ts next to each exported .js)',
+					'declares a "types"/"typings" field, but "exports" is present, so TypeScript ignores it and resolves no types; add a "types" condition to "exports" (or ship a .d.ts next to each exported .js)',
 			},
 		];
 	}

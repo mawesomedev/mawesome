@@ -44,6 +44,11 @@ describe('audit (type-surface coverage notices)', () => {
 		expect(result.notices[0]).toMatchObject({ kind: 'types-not-built', surface: 'types' });
 	});
 
+	it('blames the build, not the field, when an `exports` types condition is unbuilt', async () => {
+		const result = await run('types-exports-condition-not-built');
+		expect(result.notices[0]).toMatchObject({ kind: 'types-not-built', surface: 'types' });
+	});
+
 	it('notices when shipped .d.ts files are not exposed by the manifest', async () => {
 		const result = await run('types-unreachable');
 		expect(result.notices[0]).toMatchObject({ kind: 'types-unreachable', surface: 'types' });
