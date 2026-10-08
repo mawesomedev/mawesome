@@ -63,7 +63,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
 		baseUrl: apiUrl,
 		...(token === undefined ? {} : { auth: token }),
 		userAgent: 'pr-baseline',
-		request: { fetch: options.fetch },
+		request: { fetch: rejectEmptyGraphql(options.fetch, graphqlUrl) },
 		retry: { doNotRetry: DO_NOT_RETRY, retries: RETRIES, retryAfterBaseValue: retryBaseMs },
 	});
 	octokit.hook.after('request', (response, requestOptions) => {
@@ -101,6 +101,43 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
 			return envelope.data as T;
 		},
 	};
+}
+
+/**
+ * Turns a 200 GraphQL response without data or errors (an empty or truncated body) into a 502.
+ * The retry plugin then retries it, and a final failure carries the body instead of a TypeError.
+ */
+function rejectEmptyGraphql(fetcher: typeof fetch, graphqlUrl: string): typeof fetch {
+	return async (input, init) => {
+		const response = await fetcher(input, init);
+		const url = input instanceof Request ? input.url : String(input);
+		if (url !== graphqlUrl || response.status !== 200) {
+			return response;
+		}
+		const text = await response.clone().text();
+		if (hasDataOrErrors(text)) {
+			return response;
+		}
+		const message = `GraphQL returned 200 without data: ${JSON.stringify(text.slice(0, 200))}`;
+		// Rate-limit headers stay for tracking; the body headers describe the replaced body.
+		const headers = new Headers(response.headers);
+		headers.delete('content-length');
+		headers.delete('content-encoding');
+		headers.set('content-type', 'application/json; charset=utf-8');
+		return new Response(JSON.stringify({ message }), { status: 502, headers });
+	};
+}
+
+function hasDataOrErrors(text: string): boolean {
+	try {
+		const envelope = JSON.parse(text) as { data?: unknown; errors?: unknown } | null;
+		return (
+			(typeof envelope?.data === 'object' && envelope.data !== null) ||
+			(Array.isArray(envelope?.errors) && envelope.errors.length > 0)
+		);
+	} catch {
+		return false;
+	}
 }
 
 /** Maps an Octokit failure onto the tool's classification; other errors pass through unchanged. */
