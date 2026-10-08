@@ -1,5 +1,11 @@
 # @mawesome/dependency-audit
 
+## 0.4.9
+
+### Patch Changes
+
+- [#103](https://github.com/mawesomedev/mawesome/pull/103) [`f99655f`](https://github.com/mawesomedev/mawesome/commit/f99655f8aa3b342031ffc8d42384c84077b67c6c) Thanks [@manzoorwanijk](https://github.com/manzoorwanijk)! - Report a new `types-ignored-by-exports` notice when a built `types`/`typings` field is hidden by `exports`, instead of the misleading `types-not-built`.
+
 ## 0.4.8
 
 ### Patch Changes

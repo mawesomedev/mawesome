@@ -1,6 +1,6 @@
 {
 	"name": "@mawesome/pr-baseline",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Keep open pull requests current with a movable baseline on the base branch, reported through commit statuses",
 	"keywords": [
 		"baseline",

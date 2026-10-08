@@ -1,6 +1,6 @@
 {
 	"name": "@mawesome/dependency-audit",
-	"version": "0.4.8",
+	"version": "0.4.9",
 	"description": "Verify every reachable bare import in a package's released artifact is declared and resolvable",
 	"keywords": [
 		"audit",
