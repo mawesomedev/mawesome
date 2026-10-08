@@ -1,5 +1,11 @@
 # @mawesome/pr-baseline
 
+## 0.2.1
+
+### Patch Changes
+
+- [#105](https://github.com/mawesomedev/mawesome/pull/105) [`fc61db6`](https://github.com/mawesomedev/mawesome/commit/fc61db64f8f37eabc0cb9856fbdd376ac727a10e) Thanks [@manzoorwanijk](https://github.com/manzoorwanijk)! - Retry a GraphQL response that arrives without data, and report its body if it keeps failing, instead of crashing with `Cannot read properties of undefined (reading 'repository')`.
+
 ## 0.2.0
 
 ### Minor Changes

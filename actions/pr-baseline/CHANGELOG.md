@@ -1,5 +1,12 @@
 # @mawesome/pr-baseline-action
 
+## 0.2.2
+
+### Patch Changes
+
+- Updated dependencies [[`fc61db6`](https://github.com/mawesomedev/mawesome/commit/fc61db64f8f37eabc0cb9856fbdd376ac727a10e)]:
+  - @mawesome/pr-baseline@0.2.1
+
 ## 0.2.1
 
 ### Patch Changes
