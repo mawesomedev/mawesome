@@ -5,7 +5,10 @@ import { FakeGitHub } from '@mawesome/testing/github';
 
 const REPO = { owner: 'acme', repo: 'widgets' };
 
-function client(github: FakeGitHub, urls: { apiUrl?: string; graphqlUrl?: string } = {}) {
+function client(
+	github: FakeGitHub,
+	overrides: { apiUrl?: string; graphqlUrl?: string; fetch?: typeof fetch } = {},
+) {
 	return createApiClient({
 		apiUrl: 'https://api.github.com',
 		graphqlUrl: 'https://api.github.com/graphql',
@@ -13,7 +16,7 @@ function client(github: FakeGitHub, urls: { apiUrl?: string; graphqlUrl?: string
 		fetch: github.fetch,
 		retryBaseMs: 0,
 		logger: { info() {}, warn() {} },
-		...urls,
+		...overrides,
 	});
 }
 
@@ -199,5 +202,44 @@ describe('classification after retries', () => {
 		});
 		await expect(api.graphql('query {}', {})).rejects.toMatchObject({ kind: 'server' });
 		expect(github.calls).toHaveLength(3);
+	});
+
+	it.each(['', '{"data":{"repository":{"pullRe', '<html>timeout</html>', '{"data":null}'])(
+		'retries a 200 GraphQL body without data (%j), then reports it as a server failure',
+		async (body) => {
+			const github = new FakeGitHub();
+			let calls = 0;
+			const fetcher: typeof fetch = async (input, init) => {
+				calls++;
+				const url = input instanceof Request ? input.url : String(input);
+				return url.endsWith('/graphql')
+					? new Response(body, {
+							status: 200,
+							headers: { 'content-type': 'application/json; charset=utf-8' },
+						})
+					: github.fetch(input, init);
+			};
+			const api = client(github, { fetch: fetcher });
+			const failure = api.graphql('query {}', {});
+			await expect(failure).rejects.toMatchObject({ kind: 'server', status: 502 });
+			await expect(failure).rejects.toThrow(
+				`GraphQL returned 200 without data: ${JSON.stringify(body)}`,
+			);
+			expect(calls).toBe(3);
+		},
+	);
+
+	it('passes a GraphQL body through once a retry returns data', async () => {
+		const github = new FakeGitHub();
+		let calls = 0;
+		const fetcher: typeof fetch = async (input, init) =>
+			++calls === 1
+				? new Response('', { status: 200, headers: { 'content-type': 'application/json' } })
+				: github.fetch(input, init);
+		const api = client(github, { fetch: fetcher });
+		await expect(
+			api.graphql('query { object(oid: 1) }', { oid: 'x', context: 'c' }),
+		).resolves.toBeDefined();
+		expect(calls).toBe(2);
 	});
 });
