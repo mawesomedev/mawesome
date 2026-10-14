@@ -318,6 +318,24 @@ describe('action mode: auto', () => {
 		expect(outputs()['state']).toBe('skipped');
 	});
 
+	it('judges a stacked PR against the branch its stack lands on', async () => {
+		for (const event of ['pull_request_target', 'pull_request']) {
+			runner({
+				event,
+				payload: pullPayload(sha(12), {
+					pull_request: {
+						...(pullPayload(sha(12))['pull_request'] as object),
+						base: { ref: 'feature/a' },
+						stack: { id: 1, base: { ref: 'main' }, position: 2, size: 2 },
+					},
+				}),
+			});
+			await run();
+			expect(outputs()['state']).toBe('failure');
+		}
+		expect(world.github.requests(/\/statuses\//, 'POST')).toHaveLength(1);
+	});
+
 	it('evaluates a merge group against the base and skips one for another branch', async () => {
 		runner({
 			event: 'merge_group',

@@ -6,7 +6,7 @@ on:
   # A public repository blocks this event by default from 2 November 2026; the `pr-target-for-pr-baseline` policy allows it.
   # That policy is an exhaustive allowlist scoped to this file, so a trigger added below has to be added there too or it never fires.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, synchronize, reopened, ready_for_review, edited, stacked]
   merge_group:
   push:
     branches: [main]

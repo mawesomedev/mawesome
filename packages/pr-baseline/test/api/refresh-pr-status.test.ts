@@ -147,6 +147,58 @@ describe('refresh-pr-status', () => {
 		);
 	});
 
+	it('judges a stacked PR against the branch its stack lands on', async () => {
+		const { client, github } = harness({}, (gh) => {
+			gh.baseline('pr-baseline', sha(3));
+			gh.commit(sha(11), [sha(4)]);
+			gh.commit(sha(10), [sha(2)]);
+			gh.pull({ number: 7, headSha: sha(11), stack: { id: 1, base: 'main', position: 1 } });
+			gh.pull({
+				number: 8,
+				headSha: sha(10),
+				baseRef: 'feature/a',
+				stack: { id: 1, base: 'main', position: 2 },
+			});
+		});
+		const result = await client.refreshPrStatus({ pr: 8 });
+		expect(result).toMatchObject({ outOfScope: false, written: true });
+		expect(result.verdict.kind).toBe('fail');
+		expect(github.latestStatus(sha(10), 'PR baseline')?.description).toBe(
+			'Merge or rebase main to include: pr-baseline',
+		);
+	});
+
+	it('skips a stacked PR whose stack lands on another branch', async () => {
+		const { client, github } = harness({}, (gh) => {
+			gh.commit(sha(10), [sha(4)]);
+			gh.pull({
+				number: 8,
+				headSha: sha(10),
+				baseRef: 'feature/a',
+				stack: { id: 1, base: 'release/1.x', position: 2 },
+			});
+		});
+		await expect(client.refreshPrStatus({ pr: 8 })).resolves.toMatchObject({
+			outOfScope: true,
+			written: false,
+		});
+		expect(github.requests(/\/statuses\//, 'POST')).toHaveLength(0);
+	});
+
+	it('uses the PR base on a server without stacks', async () => {
+		const { client } = harness({}, (gh) => {
+			gh.stacks = false;
+			gh.commit(sha(10), [sha(4)]);
+			gh.pull({
+				number: 8,
+				headSha: sha(10),
+				baseRef: 'feature/a',
+				stack: { id: 1, base: 'main', position: 2 },
+			});
+		});
+		await expect(client.refreshPrStatus({ pr: 8 })).resolves.toMatchObject({ outOfScope: true });
+	});
+
 	it('re-reads the baseline refs before posting and evaluates against the moved baseline', async () => {
 		const { client, github } = harness({}, (gh) => {
 			gh.baseline('pr-baseline', sha(2));

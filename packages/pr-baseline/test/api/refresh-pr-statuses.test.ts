@@ -26,6 +26,8 @@ function populate(gh: FakeGitHub): void {
 	gh.status(sha(14), { state: 'success', description: PASS, creator: 'someone-else' });
 }
 
+const stack = (position: number) => ({ id: 1, base: 'main', position });
+
 describe('refresh-pr-statuses', () => {
 	it('writes only statuses that differ and reports the counts', async () => {
 		const { client, github } = harness({}, populate);
@@ -46,6 +48,61 @@ describe('refresh-pr-statuses', () => {
 			[2, 'written'],
 			[1, 'written'],
 		]);
+	});
+
+	it('stamps every open PR of a stack that lands on the base', async () => {
+		const { client, github } = harness({}, (gh) => {
+			gh.baseline('pr-baseline', sha(3));
+			gh.commit(sha(11), [sha(4)]);
+			gh.commit(sha(12), [sha(11)]);
+			gh.commit(sha(13), [sha(2)]);
+			gh.pull({ number: 1, headSha: sha(11), stack: stack(1) });
+			gh.pull({ number: 2, headSha: sha(12), baseRef: 'feature/a', stack: stack(2) });
+			gh.pull({ number: 3, headSha: sha(13), baseRef: 'feature/b', stack: stack(3) });
+			gh.pull({
+				number: 4,
+				headSha: sha(13),
+				baseRef: 'feature/c',
+				state: 'closed',
+				stack: stack(4),
+			});
+			gh.pull({ number: 5, headSha: sha(13), baseRef: 'feature/d' });
+		});
+		const result = await client.refreshPrStatuses();
+		expect(result).toMatchObject({ openPulls: 3, written: 3 });
+		expect(github.latestStatus(sha(12), 'PR baseline')?.state).toBe('success');
+		expect(github.latestStatus(sha(13), 'PR baseline')?.state).toBe('failure');
+		// The listing and one read of the PRs the stack adds, which leaves the known entries out.
+		const [, read] = github.requests(/graphql/);
+		expect(github.requests(/graphql/)).toHaveLength(2);
+		expect(read?.body).toMatchObject({ query: expect.not.stringContaining('entries') });
+	});
+
+	it('pages through a stack longer than one page of entries', async () => {
+		const { client, github } = harness({}, (gh) => {
+			gh.pageSize = 2;
+			gh.commit(sha(11), [sha(5)]);
+			gh.pull({ number: 1, headSha: sha(11), stack: stack(1) });
+			for (const n of [2, 3, 4, 5]) {
+				gh.pull({ number: n, headSha: sha(11), baseRef: `feature/${n}`, stack: stack(n) });
+			}
+		});
+		await expect(client.refreshPrStatuses()).resolves.toMatchObject({ openPulls: 5 });
+		// The listing, two more pages of entries, and one read of the PRs they add.
+		expect(github.requests(/graphql/)).toHaveLength(4);
+	});
+
+	it('lists the PRs against the base on a server without stacks', async () => {
+		const { client, github } = harness({}, (gh) => {
+			populate(gh);
+			gh.stacks = false;
+		});
+		await expect(client.refreshPrStatuses()).resolves.toMatchObject({
+			openPulls: 4,
+			incomplete: false,
+		});
+		// The stack query is rejected once, then the run continues without it.
+		expect(github.requests(/graphql/)).toHaveLength(2);
 	});
 
 	it('is idempotent on the second run', async () => {

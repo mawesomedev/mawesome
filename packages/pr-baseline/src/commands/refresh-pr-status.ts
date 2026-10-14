@@ -2,7 +2,7 @@ import { ConfigError, repoUrl } from '../config.ts';
 import { baselinesOffBase, evaluateCommit } from '../evaluate.ts';
 import { tryRevParse } from '../git/local.ts';
 import { revParse } from '../git/repo.ts';
-import { getPull } from '../github/pulls.ts';
+import { getPull, targetBase } from '../github/pulls.ts';
 import { resolveCommit } from '../github/refs.ts';
 import type { Runtime } from '../runtime.ts';
 import type {
@@ -26,7 +26,7 @@ const SNAPSHOT_ROUNDS = 3;
 
 interface Target {
 	sha: string;
-	/** The PR's base branch when a PR was given. */
+	/** The branch the PR lands on when a PR was given. */
 	baseRef: string | undefined;
 	/** Whether reporting defaults on: only a PR is known to come from an event; any bare commit is a local question. */
 	fromEvent: boolean;
@@ -193,7 +193,7 @@ async function resolveTarget(runtime: Runtime, options: RefreshPrStatusOptions):
 		if (pull === null) {
 			throw new ConfigError(`Pull request #${options.pr} was not found in ${config.repo}.`);
 		}
-		return { sha: pull.headSha, baseRef: pull.baseRef, fromEvent: true };
+		return { sha: pull.headSha, baseRef: targetBase(pull), fromEvent: true };
 	}
 	if (options.sha !== undefined) {
 		if (isFullSha(options.sha)) {
