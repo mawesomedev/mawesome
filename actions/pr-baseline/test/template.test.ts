@@ -46,7 +46,9 @@ describe('consumer workflow template', () => {
 
 	it('runs once per merge and keeps the counts in the log rather than an artifact', () => {
 		// A merge fires `push` too, so a `closed` trigger would only queue the same job a second time.
-		expect(template).toContain('types: [opened, synchronize, reopened, ready_for_review, edited]');
+		expect(template).toContain(
+			'types: [opened, synchronize, reopened, ready_for_review, edited, stacked]',
+		);
 		expect(refresh).not.toContain("github.event.action == 'closed'");
 		// The results file is still an output for a workflow that wants it.
 		expect(template).not.toContain('upload-artifact');

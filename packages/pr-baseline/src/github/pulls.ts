@@ -47,10 +47,16 @@ interface PullNode {
 		nodes: Array<{ commit: { status: { context: StatusContextNode | null } | null } }>;
 	};
 	/** Absent when the query does not select it, as on a server without stacks. */
-	stack?: {
-		baseRefName: string;
-		entries: { nodes: Array<{ pullRequest: { id: string; number: number; state: string } }> };
-	} | null;
+	stack?: { id: string; baseRefName: string; entries: StackEntries } | null;
+}
+
+interface StackEntries {
+	pageInfo: { hasNextPage: boolean; endCursor: string | null };
+	nodes: Array<{ pullRequest: { id: string; number: number; state: string } }>;
+}
+
+interface StackEntriesData {
+	node: { entries: StackEntries } | null;
 }
 
 interface OpenPullsData {
@@ -92,9 +98,16 @@ const PULL_FIELDS = `
 	}
 `;
 
-/** A stack holds a handful of PRs; 100 entries is the most one page of a connection returns. */
+const ENTRY_FIELDS = `pageInfo { hasNextPage endCursor } nodes { pullRequest { id number state } }`;
+
 const STACK_FIELDS = `
-	stack { baseRefName entries(first: 100) { nodes { pullRequest { id number state } } } }
+	stack { id baseRefName entries(first: 100) { ${ENTRY_FIELDS} } }
+`;
+
+const STACK_ENTRIES_QUERY = `
+	query ($id: ID!, $cursor: String) {
+		node(id: $id) { ... on PullRequestStack { entries(first: 100, after: $cursor) { ${ENTRY_FIELDS} } } }
+	}
 `;
 
 const openPullsQuery = (stacks: boolean) => `
@@ -147,6 +160,7 @@ export async function listOpenPulls(
 	const [owner, name] = repo.split('/');
 	const pulls = new Map<number, OpenPull>();
 	const stacked = new Map<number, string>();
+	const seenStacks = new Set<string>();
 	let stacks = true;
 	let cursor: string | null = null;
 	for (;;) {
@@ -165,9 +179,12 @@ export async function listOpenPulls(
 		const page = data.repository.pullRequests;
 		for (const node of page.nodes) {
 			pulls.set(node.number, toOpenPull(node));
-			for (const entry of node.stack?.entries.nodes ?? []) {
-				if (entry.pullRequest.state === 'OPEN' && node.stack?.baseRefName === input.base) {
-					stacked.set(entry.pullRequest.number, entry.pullRequest.id);
+			if (node.stack?.baseRefName === input.base && !seenStacks.has(node.stack.id)) {
+				seenStacks.add(node.stack.id);
+				for (const entry of await stackEntries(api, node.stack.id, node.stack.entries)) {
+					if (entry.state === 'OPEN') {
+						stacked.set(entry.number, entry.id);
+					}
 				}
 			}
 		}
@@ -189,6 +206,28 @@ export async function listOpenPulls(
 		}
 	}
 	return [...pulls.values()];
+}
+
+/** Every entry of a stack, continuing past the page the listing returned. */
+async function stackEntries(
+	api: ApiClient,
+	id: string,
+	first: StackEntries,
+): Promise<Array<{ id: string; number: number; state: string }>> {
+	const entries = first.nodes.map((node) => node.pullRequest);
+	let page = first;
+	while (page.pageInfo.hasNextPage) {
+		const data: StackEntriesData = await api.graphql<StackEntriesData>(STACK_ENTRIES_QUERY, {
+			id,
+			cursor: page.pageInfo.endCursor,
+		});
+		if (data.node === null) {
+			break;
+		}
+		page = data.node.entries;
+		entries.push(...page.nodes.map((node) => node.pullRequest));
+	}
+	return entries;
 }
 
 function toOpenPull(node: PullNode): OpenPull {

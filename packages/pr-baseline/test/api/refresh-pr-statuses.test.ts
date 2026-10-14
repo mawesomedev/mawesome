@@ -76,6 +76,20 @@ describe('refresh-pr-statuses', () => {
 		expect(github.requests(/graphql/)).toHaveLength(2);
 	});
 
+	it('pages through a stack longer than one page of entries', async () => {
+		const { client, github } = harness({}, (gh) => {
+			gh.pageSize = 2;
+			gh.commit(sha(11), [sha(5)]);
+			gh.pull({ number: 1, headSha: sha(11), stack: stack(1) });
+			for (const n of [2, 3, 4, 5]) {
+				gh.pull({ number: n, headSha: sha(11), baseRef: `feature/${n}`, stack: stack(n) });
+			}
+		});
+		await expect(client.refreshPrStatuses()).resolves.toMatchObject({ openPulls: 5 });
+		// The listing, two more pages of entries, and one read of the PRs they add.
+		expect(github.requests(/graphql/)).toHaveLength(4);
+	});
+
 	it('lists the PRs against the base on a server without stacks', async () => {
 		const { client, github } = harness({}, (gh) => {
 			populate(gh);

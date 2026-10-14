@@ -455,6 +455,12 @@ export class FakeGitHub {
 				],
 			};
 		}
+		if (query.includes('node(id:')) {
+			const id = Number((variables['id'] as string).replace(/^STACK_/, ''));
+			const cursor = typeof variables['cursor'] === 'string' ? Number(variables['cursor']) : 0;
+			const exists = [...this.pulls.values()].some((pull) => pull.stack?.id === id);
+			return { data: { node: exists ? { entries: this.stackEntries(id, cursor) } : null } };
+		}
 		if (query.includes('nodes(ids:')) {
 			const ids = variables['ids'] as string[];
 			return {
@@ -516,20 +522,25 @@ export class FakeGitHub {
 			return null;
 		}
 		const { id, base } = pull.stack;
+		return { id: `STACK_${id}`, baseRefName: base, entries: this.stackEntries(id, 0) };
+	}
+
+	/** One page of a stack's entries, `pageSize` at a time, as GitHub pages a connection. */
+	private stackEntries(id: number, cursor: number): unknown {
 		const members = [...this.pulls.values()]
 			.filter((member) => member.stack?.id === id)
 			.toSorted((a, b) => (a.stack?.position ?? 0) - (b.stack?.position ?? 0));
+		const page = members.slice(cursor, cursor + this.pageSize);
+		const hasNextPage = cursor + this.pageSize < members.length;
 		return {
-			baseRefName: base,
-			entries: {
-				nodes: members.map((member) => ({
-					pullRequest: {
-						id: `PR_${member.number}`,
-						number: member.number,
-						state: member.merged ? 'MERGED' : member.state.toUpperCase(),
-					},
-				})),
-			},
+			pageInfo: { hasNextPage, endCursor: hasNextPage ? String(cursor + this.pageSize) : null },
+			nodes: page.map((member) => ({
+				pullRequest: {
+					id: `PR_${member.number}`,
+					number: member.number,
+					state: member.merged ? 'MERGED' : member.state.toUpperCase(),
+				},
+			})),
 		};
 	}
 }

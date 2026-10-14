@@ -8,12 +8,12 @@ on:
   # Where the block stays, comment this trigger out and uncomment `pull_request` below.
   # Never enable both: a same-repo PR would then fire two runs.
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+    types: [opened, synchronize, reopened, ready_for_review, edited, stacked]
   # The fallback stamps a same-repo PR as before, with two gaps the backfill job at the bottom covers.
   # A fork PR is not stamped at all: its run's token is read-only and the repository's secrets are withheld, so a custom token does not lift it.
   # A PR carrying a merge conflict fires no `pull_request` run at all, where `pull_request_target` still runs.
   #pull_request:
-  #  types: [opened, synchronize, reopened, ready_for_review, edited]
+  #  types: [opened, synchronize, reopened, ready_for_review, edited, stacked]
   merge_group:
   push:
     branches: [BASE]
