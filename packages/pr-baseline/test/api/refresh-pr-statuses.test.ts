@@ -72,8 +72,10 @@ describe('refresh-pr-statuses', () => {
 		expect(result).toMatchObject({ openPulls: 3, written: 3 });
 		expect(github.latestStatus(sha(12), 'PR baseline')?.state).toBe('success');
 		expect(github.latestStatus(sha(13), 'PR baseline')?.state).toBe('failure');
-		// The listing and one read of the PRs the stack adds.
+		// The listing and one read of the PRs the stack adds, which leaves the known entries out.
+		const [, read] = github.requests(/graphql/);
 		expect(github.requests(/graphql/)).toHaveLength(2);
+		expect(read?.body).toMatchObject({ query: expect.not.stringContaining('entries') });
 	});
 
 	it('pages through a stack longer than one page of entries', async () => {

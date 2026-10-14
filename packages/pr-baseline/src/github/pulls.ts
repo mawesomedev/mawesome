@@ -68,8 +68,11 @@ interface OpenPullsData {
 	};
 }
 
+/** The batch read selects only the stack's base; the listing already collected its entries. */
+type StackedPullNode = Omit<PullNode, 'stack'> & { stack?: { baseRefName: string } | null };
+
 interface PullNodesData {
-	nodes: Array<PullNode | null>;
+	nodes: Array<StackedPullNode | null>;
 }
 
 interface LabeledMergesData {
@@ -123,7 +126,7 @@ const openPullsQuery = (stacks: boolean) => `
 
 const PULL_NODES_QUERY = `
 	query ($ids: [ID!]!, $context: String!) {
-		nodes(ids: $ids) { ... on PullRequest { ${PULL_FIELDS} ${STACK_FIELDS} } }
+		nodes(ids: $ids) { ... on PullRequest { ${PULL_FIELDS} stack { baseRefName } } }
 	}
 `;
 
@@ -230,7 +233,7 @@ async function stackEntries(
 	return entries;
 }
 
-function toOpenPull(node: PullNode): OpenPull {
+function toOpenPull(node: StackedPullNode): OpenPull {
 	return {
 		number: node.number,
 		headSha: node.headRefOid,
