@@ -3,7 +3,7 @@ import { ConfigError, DEFAULT_SCOPE, repoUrl } from '../config.ts';
 import { baselinesOffBase, evaluateCommit } from '../evaluate.ts';
 import { GitError } from '../git/repo.ts';
 import { isGitHubError, RETRY_HINT } from '../github/errors.ts';
-import { getPull, listOpenPulls, type OpenPull } from '../github/pulls.ts';
+import { getPull, listOpenPulls, targetBase, type OpenPull } from '../github/pulls.ts';
 import type { Runtime } from '../runtime.ts';
 import type {
 	Reporter,
@@ -203,7 +203,7 @@ export async function runRefreshPrStatuses(
 		const refs = input.verifyRefs ?? refSnapshot(baselines);
 		const list = async (): Promise<OpenPull[]> =>
 			(await listOpenPulls(api, config.repo, { base, context: config.context })).filter(
-				(pull) => pull.baseRef === base && (config.includeDrafts || !pull.isDraft),
+				(pull) => targetBase(pull) === base && (config.includeDrafts || !pull.isDraft),
 			);
 		let inScope = await list();
 		knownOpenPulls = inScope.length;
@@ -557,7 +557,7 @@ async function reconcile(
 	if (current === null || current.state !== 'open') {
 		return 'closed';
 	}
-	if (current.baseRef !== base || (!runtime.config.includeDrafts && current.draft)) {
+	if (targetBase(current) !== base || (!runtime.config.includeDrafts && current.draft)) {
 		runtime.logger.info(`PR #${listed.number} left the refresh's scope while it was preparing.`);
 		return 'outOfScope';
 	}

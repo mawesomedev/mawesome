@@ -202,6 +202,8 @@ function auto(event: Event, base: string | undefined, token: TokenKind): Plan {
 		| {
 				head: { sha: string; repo: { full_name?: string } | null };
 				base: { ref: string };
+				/** Present while the PR is in a stack; its base is the branch the whole stack lands on. */
+				stack?: { base: { ref: string } } | null;
 				merged?: boolean;
 		  }
 		| undefined;
@@ -217,7 +219,7 @@ function auto(event: Event, base: string | undefined, token: TokenKind): Plan {
 				return {
 					mode: 'refresh-pr-status',
 					sha: pull.head.sha,
-					baseRef: pull.base.ref,
+					baseRef: pull.stack?.base.ref ?? pull.base.ref,
 					report: true,
 				};
 			}
@@ -252,7 +254,12 @@ function auto(event: Event, base: string | undefined, token: TokenKind): Plan {
 				};
 			}
 			const report = canWriteOnPullRequest(fork, token);
-			return { mode: 'refresh-pr-status', sha: pull.head.sha, baseRef: pull.base.ref, report };
+			return {
+				mode: 'refresh-pr-status',
+				sha: pull.head.sha,
+				baseRef: pull.stack?.base.ref ?? pull.base.ref,
+				report,
+			};
 		}
 		case 'merge_group': {
 			const group = event.payload['merge_group'] as

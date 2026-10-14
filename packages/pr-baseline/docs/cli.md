@@ -48,7 +48,7 @@ Evaluates one commit against every configured baseline. The commit is the positi
 
 `--report` writes the status; `--no-report` suppresses it. The default is on for `--pr`, which names a commit GitHub already knows about, and off for any commit given directly, which is a local question. The action passes `report` explicitly for event SHAs. Before posting, the baseline refs and the base head are re-read together and the verdict recomputed if either moved.
 
-A PR targeting another branch is skipped with a notice, or stamped with the not-applicable pass under `--other-bases pass`. When any present baseline is not on the base branch, the commit receives the misconfiguration pass whatever its ancestry, so the operator error is visible on every PR without blocking anyone.
+A PR in a stack targets the stack's base. A PR targeting another branch is skipped with a notice, or stamped with the not-applicable pass under `--other-bases pass`. When any present baseline is not on the base branch, the commit receives the misconfiguration pass whatever its ancestry, so the operator error is visible on every PR without blocking anyone.
 
 Exit codes: `0` pass (including not-applicable and misconfigured), `1` fail, `2` error.
 

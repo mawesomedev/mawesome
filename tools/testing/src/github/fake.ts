@@ -13,6 +13,8 @@ export interface FakePull {
 	labels: string[];
 	mergeCommit: string | null;
 	headRepo: string | null;
+	/** The stack the PR sits in; its PRs share `id`, ordered by `position` from the one on `base`. */
+	stack: { id: number; base: string; position: number } | null;
 }
 
 export interface FakeStatus {
@@ -88,6 +90,8 @@ export class FakeGitHub {
 	readonly restPrefix: string;
 	readonly graphqlPath: string;
 	pageSize = 100;
+	/** False serves a server that predates stacks: GraphQL rejects the field and REST omits it. */
+	stacks = true;
 	/** Renamed files for `from...to`, as `[previous, current]` pairs. */
 	readonly renames: Map<string, Array<[string, string]>> = new Map();
 	/** Tag objects pointing at other tag objects, by object SHA. */
@@ -166,6 +170,7 @@ export class FakeGitHub {
 			labels: [],
 			mergeCommit: null,
 			headRepo: this.repo,
+			stack: null,
 			...input,
 		};
 		this.pulls.set(pull.number, pull);
@@ -388,6 +393,7 @@ export class FakeGitHub {
 						draft: pull.isDraft,
 						head: { sha: pull.headSha },
 						base: { ref: pull.baseRef },
+						...(this.stacks ? { stack: restStack(pull) } : {}),
 					});
 		}
 		if ((match = rest.match(/^\/statuses\/(.+)$/)) && method === 'POST') {
@@ -439,6 +445,27 @@ export class FakeGitHub {
 				},
 			};
 		}
+		if (query.includes('stack {') && !this.stacks) {
+			return {
+				errors: [
+					{
+						extensions: { code: 'undefinedField', typeName: 'PullRequest', fieldName: 'stack' },
+						message: "Field 'stack' doesn't exist on type 'PullRequest'",
+					},
+				],
+			};
+		}
+		if (query.includes('nodes(ids:')) {
+			const ids = variables['ids'] as string[];
+			return {
+				data: {
+					nodes: ids.map((id) => {
+						const pull = this.pulls.get(Number(id.replace(/^PR_/, '')));
+						return pull === undefined ? null : this.pullNode(pull, query, context);
+					}),
+				},
+			};
+		}
 		const cursor = typeof variables['cursor'] === 'string' ? Number(variables['cursor']) : 0;
 		const base = variables['base'] as string;
 		let pulls = [...this.pulls.values()].filter((pull) => pull.baseRef === base);
@@ -458,25 +485,59 @@ export class FakeGitHub {
 					pullRequests: {
 						pageInfo: { hasNextPage, endCursor: hasNextPage ? String(cursor + size) : null },
 						nodes: page.map((pull) => ({
-							number: pull.number,
-							isDraft: pull.isDraft,
-							headRefOid: pull.headSha,
-							baseRefName: pull.baseRef,
-							headRepository: pull.headRepo === null ? null : { nameWithOwner: pull.headRepo },
+							...this.pullNode(pull, query, context),
 							mergeCommit: pull.mergeCommit === null ? null : { oid: pull.mergeCommit },
-							commits: {
-								nodes: [
-									{
-										commit: { status: statusNode(this.latestStatus(pull.headSha, context), query) },
-									},
-								],
-							},
 						})),
 					},
 				},
 			},
 		};
 	}
+
+	private pullNode(pull: FakePull, query: string, context: string): Record<string, unknown> {
+		return {
+			number: pull.number,
+			isDraft: pull.isDraft,
+			headRefOid: pull.headSha,
+			baseRefName: pull.baseRef,
+			headRepository: pull.headRepo === null ? null : { nameWithOwner: pull.headRepo },
+			commits: {
+				nodes: [
+					{ commit: { status: statusNode(this.latestStatus(pull.headSha, context), query) } },
+				],
+			},
+			// Like GitHub, the stack is present only when the query selects it.
+			...(query.includes('stack {') ? { stack: this.graphqlStack(pull) } : {}),
+		};
+	}
+
+	private graphqlStack(pull: FakePull): unknown {
+		if (pull.stack === null) {
+			return null;
+		}
+		const { id, base } = pull.stack;
+		const members = [...this.pulls.values()]
+			.filter((member) => member.stack?.id === id)
+			.toSorted((a, b) => (a.stack?.position ?? 0) - (b.stack?.position ?? 0));
+		return {
+			baseRefName: base,
+			entries: {
+				nodes: members.map((member) => ({
+					pullRequest: {
+						id: `PR_${member.number}`,
+						number: member.number,
+						state: member.merged ? 'MERGED' : member.state.toUpperCase(),
+					},
+				})),
+			},
+		};
+	}
+}
+
+function restStack(pull: FakePull): unknown {
+	return pull.stack === null
+		? null
+		: { id: pull.stack.id, base: { ref: pull.stack.base }, position: pull.stack.position };
 }
 
 function statusNode(status: FakeStatus | null, query: string): unknown {

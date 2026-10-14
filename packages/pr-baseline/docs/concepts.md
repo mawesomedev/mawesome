@@ -28,7 +28,7 @@ Two other passes exist: **not applicable**, written only with `--other-bases pas
 
 ## Scope
 
-Only PRs whose base is the configured branch are evaluated and stamped. A commit status belongs to a SHA and a context, not to a PR, so writing a verdict for an out-of-scope PR could leak onto an in-scope one sharing the same head. Read [edge cases](./edge-cases.md) before switching `--other-bases` to `pass`.
+Only PRs that land on the configured branch are evaluated and stamped: those whose base is that branch, and every PR of a GitHub stack whose base is that branch. A commit status belongs to a SHA and a context, not to a PR, so writing a verdict for an out-of-scope PR could leak onto an in-scope one sharing the same head. Read [edge cases](./edge-cases.md) before switching `--other-bases` to `pass`.
 
 ## Several baselines
 

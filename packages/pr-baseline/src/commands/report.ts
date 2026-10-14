@@ -4,7 +4,7 @@ import type { OpenPull } from '../github/pulls.ts';
 import type { Ancestry, ResolvedBaseline } from '../types.ts';
 import { refSnapshot } from '../util.ts';
 import { compareStatus } from '../verdict.ts';
-import { listOpenPulls } from '../github/pulls.ts';
+import { listOpenPulls, targetBase } from '../github/pulls.ts';
 import type { Runtime } from '../runtime.ts';
 import type { ReportBaseline, ReportResult } from '../types.ts';
 
@@ -19,7 +19,7 @@ export async function runReport(runtime: Runtime): Promise<ReportResult> {
 	const baselines = await runtime.readBaselines();
 	const head = await runtime.head();
 	const pulls = (await listOpenPulls(api, config.repo, { base, context: config.context })).filter(
-		(pull) => pull.baseRef === base && (config.includeDrafts || !pull.isDraft),
+		(pull) => targetBase(pull) === base && (config.includeDrafts || !pull.isDraft),
 	);
 	const prepared = await ancestry.prepare?.({
 		shas: [head],

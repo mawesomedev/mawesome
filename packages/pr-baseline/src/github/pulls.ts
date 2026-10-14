@@ -7,6 +7,8 @@ export interface OpenPull {
 	headSha: string;
 	isDraft: boolean;
 	baseRef: string;
+	/** The branch the PR's stack lands on; null outside a stack. */
+	stackBaseRef: string | null;
 	/** The head repository's `owner/name`; null when it was deleted. */
 	headRepo: string | null;
 	status: StatusRecord | null;
@@ -19,6 +21,13 @@ export interface PullInfo {
 	draft: boolean;
 	headSha: string;
 	baseRef: string;
+	/** The branch the PR's stack lands on; null outside a stack. */
+	stackBaseRef: string | null;
+}
+
+/** The branch a PR lands on: its stack's base, which GitHub enforces the base's rules for, or its own base. */
+export function targetBase(pull: { baseRef: string; stackBaseRef: string | null }): string {
+	return pull.stackBaseRef ?? pull.baseRef;
 }
 
 interface StatusContextNode {
@@ -28,22 +37,33 @@ interface StatusContextNode {
 	creator: { login: string; __typename?: string } | null;
 }
 
+interface PullNode {
+	number: number;
+	isDraft: boolean;
+	headRefOid: string;
+	baseRefName: string;
+	headRepository: { nameWithOwner: string } | null;
+	commits: {
+		nodes: Array<{ commit: { status: { context: StatusContextNode | null } | null } }>;
+	};
+	/** Absent when the query does not select it, as on a server without stacks. */
+	stack?: {
+		baseRefName: string;
+		entries: { nodes: Array<{ pullRequest: { id: string; number: number; state: string } }> };
+	} | null;
+}
+
 interface OpenPullsData {
 	repository: {
 		pullRequests: {
 			pageInfo: { hasNextPage: boolean; endCursor: string | null };
-			nodes: Array<{
-				number: number;
-				isDraft: boolean;
-				headRefOid: string;
-				baseRefName: string;
-				headRepository: { nameWithOwner: string } | null;
-				commits: {
-					nodes: Array<{ commit: { status: { context: StatusContextNode | null } | null } }>;
-				};
-			}>;
+			nodes: PullNode[];
 		};
 	};
+}
+
+interface PullNodesData {
+	nodes: Array<PullNode | null>;
 }
 
 interface LabeledMergesData {
@@ -61,23 +81,36 @@ interface CommitStatusData {
 	};
 }
 
-const OPEN_PULLS_QUERY = `
+const PULL_FIELDS = `
+	number
+	isDraft
+	headRefOid
+	baseRefName
+	headRepository { nameWithOwner }
+	commits(last: 1) {
+		nodes { commit { status { context(name: $context) { state description targetUrl creator { login __typename } } } } }
+	}
+`;
+
+/** A stack holds a handful of PRs; 100 entries is the most one page of a connection returns. */
+const STACK_FIELDS = `
+	stack { baseRefName entries(first: 100) { nodes { pullRequest { id number state } } } }
+`;
+
+const openPullsQuery = (stacks: boolean) => `
 	query ($owner: String!, $name: String!, $base: String!, $context: String!, $cursor: String) {
 		repository(owner: $owner, name: $name) {
 			pullRequests(states: OPEN, baseRefName: $base, first: 100, after: $cursor, orderBy: { field: UPDATED_AT, direction: DESC }) {
 				pageInfo { hasNextPage endCursor }
-				nodes {
-					number
-					isDraft
-					headRefOid
-					baseRefName
-					headRepository { nameWithOwner }
-					commits(last: 1) {
-						nodes { commit { status { context(name: $context) { state description targetUrl creator { login __typename } } } } }
-					}
-				}
+				nodes { ${PULL_FIELDS} ${stacks ? STACK_FIELDS : ''} }
 			}
 		}
+	}
+`;
+
+const PULL_NODES_QUERY = `
+	query ($ids: [ID!]!, $context: String!) {
+		nodes(ids: $ids) { ... on PullRequest { ${PULL_FIELDS} ${STACK_FIELDS} } }
 	}
 `;
 
@@ -102,39 +135,77 @@ const COMMIT_STATUS_QUERY = `
 	}
 `;
 
-/** Lists open PRs against `base` with each head's latest status for `context`, one page per 100 PRs. */
+/**
+ * Lists open PRs that land on `base` with each head's latest status for `context`, one page per 100 PRs.
+ * A stack's upper PRs target other branches, so they are reached through the stack of the PR at its bottom.
+ */
 export async function listOpenPulls(
 	api: ApiClient,
 	repo: string,
 	input: { base: string; context: string },
 ): Promise<OpenPull[]> {
 	const [owner, name] = repo.split('/');
-	const pulls: OpenPull[] = [];
+	const pulls = new Map<number, OpenPull>();
+	const stacked = new Map<number, string>();
+	let stacks = true;
 	let cursor: string | null = null;
 	for (;;) {
-		const data: OpenPullsData = await api.graphql<OpenPullsData>(OPEN_PULLS_QUERY, {
-			owner,
-			name,
-			base: input.base,
-			context: input.context,
-			cursor,
-		});
+		const variables = { owner, name, base: input.base, context: input.context, cursor };
+		let data: OpenPullsData;
+		try {
+			data = await api.graphql<OpenPullsData>(openPullsQuery(stacks), variables);
+		} catch (error) {
+			if (!stacks || !lacksStacks(error)) {
+				throw error;
+			}
+			// A server that predates stacks rejects the field; its PRs all target their base directly.
+			stacks = false;
+			continue;
+		}
 		const page = data.repository.pullRequests;
 		for (const node of page.nodes) {
-			pulls.push({
-				number: node.number,
-				headSha: node.headRefOid,
-				isDraft: node.isDraft,
-				baseRef: node.baseRefName,
-				headRepo: node.headRepository?.nameWithOwner ?? null,
-				status: toRecord(node.commits.nodes[0]?.commit.status?.context ?? null),
-			});
+			pulls.set(node.number, toOpenPull(node));
+			for (const entry of node.stack?.entries.nodes ?? []) {
+				if (entry.pullRequest.state === 'OPEN' && node.stack?.baseRefName === input.base) {
+					stacked.set(entry.pullRequest.number, entry.pullRequest.id);
+				}
+			}
 		}
 		if (!page.pageInfo.hasNextPage) {
-			return pulls;
+			break;
 		}
 		cursor = page.pageInfo.endCursor;
 	}
+	const missing = [...stacked].filter(([number]) => !pulls.has(number)).map(([, id]) => id);
+	for (let index = 0; index < missing.length; index += 100) {
+		const data = await api.graphql<PullNodesData>(PULL_NODES_QUERY, {
+			ids: missing.slice(index, index + 100),
+			context: input.context,
+		});
+		for (const node of data.nodes) {
+			if (node !== null) {
+				pulls.set(node.number, toOpenPull(node));
+			}
+		}
+	}
+	return [...pulls.values()];
+}
+
+function toOpenPull(node: PullNode): OpenPull {
+	return {
+		number: node.number,
+		headSha: node.headRefOid,
+		isDraft: node.isDraft,
+		baseRef: node.baseRefName,
+		stackBaseRef: node.stack?.baseRefName ?? null,
+		headRepo: node.headRepository?.nameWithOwner ?? null,
+		status: toRecord(node.commits.nodes[0]?.commit.status?.context ?? null),
+	};
+}
+
+/** GitHub names the unknown field in the error; GHES before stacks has no `stack` on a PR. */
+function lacksStacks(error: unknown): boolean {
+	return isGitHubError(error) && /Field 'stack' doesn't exist/.test(error.body);
 }
 
 /** Merge commits of every merged PR against `base` that carries `label`, newest first, exhaustively. */
@@ -194,6 +265,8 @@ export async function getPull(
 			...repoParts(repo),
 			pull_number: number,
 		});
+		// Newer than the generated types; absent on a server without stacks.
+		const stack = (pull.data as { stack?: { base: { ref: string } } | null }).stack;
 		return {
 			number: pull.data.number,
 			state: pull.data.state,
@@ -201,6 +274,7 @@ export async function getPull(
 			draft: pull.data.draft ?? false,
 			headSha: pull.data.head.sha,
 			baseRef: pull.data.base.ref,
+			stackBaseRef: stack?.base.ref ?? null,
 		};
 	} catch (error) {
 		if (isGitHubError(error, 'not-found')) {
