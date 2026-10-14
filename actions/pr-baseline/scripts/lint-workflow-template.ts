@@ -11,8 +11,11 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const template = join(here, '..', 'workflow-template.yml');
 
-/** actionlint's schema lags behind GitHub's `concurrency.queue`, which is generally available since May 2026. */
-const ACTIONLINT_IGNORES = ['unexpected key "queue" for "concurrency" section'];
+/** actionlint's schema lags behind GitHub's `concurrency.queue` and the `stacked` activity of stacked PRs. */
+const ACTIONLINT_IGNORES = [
+	'unexpected key "queue" for "concurrency" section',
+	'invalid activity type "stacked"',
+];
 
 /*
  * `pull_request_target` is the documented write path for fork PRs and the action never checks out PR code,
