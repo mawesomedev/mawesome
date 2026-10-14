@@ -1,5 +1,15 @@
 # @mawesome/pr-baseline
 
+## 0.3.0
+
+### Minor Changes
+
+- [#108](https://github.com/mawesomedev/mawesome/pull/108) [`ed7ffcf`](https://github.com/mawesomedev/mawesome/commit/ed7ffcfa2814e21d6c3e020c0eebde7360bb9aaf) Thanks [@manzoorwanijk](https://github.com/manzoorwanijk)! - Judge every PR in a GitHub stack against the branch the stack lands on, so stacked PRs get the status their required check waits for.
+
+### Patch Changes
+
+- [#105](https://github.com/mawesomedev/mawesome/pull/105) [`fc61db6`](https://github.com/mawesomedev/mawesome/commit/fc61db64f8f37eabc0cb9856fbdd376ac727a10e) Thanks [@manzoorwanijk](https://github.com/manzoorwanijk)! - Retry a GraphQL response that arrives without data, and report its body if it keeps failing, instead of crashing with `Cannot read properties of undefined (reading 'repository')`.
+
 ## 0.2.0
 
 ### Minor Changes
