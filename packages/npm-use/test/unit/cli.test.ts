@@ -51,6 +51,26 @@ describe('cli', () => {
 		expect(stderr).toContain('^99');
 	});
 
+	it('an invalid range follows its own onFail', () => {
+		const root = makeTree({
+			'package.json': manifest({
+				devEngines: { packageManager: { name: 'npm', version: 'latest', onFail: 'warn' } },
+			}),
+		});
+		const warned = run(['which', '--json'], root, { NPM_USE_OFFLINE: '1' });
+		expect(warned.status).toBe(0);
+		expect(JSON.parse(warned.stdout)).toMatchObject({
+			kind: 'own',
+			warning: expect.stringContaining('latest'),
+		});
+		const strict = makeTree({
+			'package.json': manifest({
+				devEngines: { packageManager: { name: 'npm', version: 'latest' } },
+			}),
+		});
+		expect(run(['which'], strict, { NPM_USE_OFFLINE: '1' }).status).toBe(3);
+	});
+
 	it('which honours onFail warn and NPM_USE_DISABLE', () => {
 		const root = makeTree({
 			'package.json': manifest({

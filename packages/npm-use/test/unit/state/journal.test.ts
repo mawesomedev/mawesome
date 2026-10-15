@@ -99,13 +99,15 @@ describe('recoverDeadJournals', () => {
 		expect(readFileSync(join(root, 'target.txt'), 'utf8')).toBe('new');
 	});
 
-	it('rolls back a torn write from the backup', async () => {
+	it('never restores the backup over content it does not recognise, even with a valid backup', async () => {
 		const root = makeTree({ journal: {} });
 		stagedJournal(root, await deadOwner(), { original: 'old', intended: 'new' });
-		writeFileSync(join(root, 'target.txt'), 'ne');
+		// The user edited the file between the crash and the recovery.
+		writeFileSync(join(root, 'target.txt'), 'mine');
 		const report = recoverDeadJournals(join(root, 'journal'), MACHINE);
-		expect(report.rolledBack).toHaveLength(1);
-		expect(readFileSync(join(root, 'target.txt'), 'utf8')).toBe('old');
+		expect(report.changed).toEqual([join(root, 'target.txt')]);
+		expect(readFileSync(join(root, 'target.txt'), 'utf8')).toBe('mine');
+		expect(listJournals(join(root, 'journal'))).toEqual([]);
 	});
 
 	it('leaves a target someone else changed and reports it', async () => {

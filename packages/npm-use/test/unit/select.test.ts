@@ -90,6 +90,17 @@ describe('selectCandidate', () => {
 		});
 	});
 
+	it('prefers an unpinned alternative over a sha256 pin it cannot judge yet', () => {
+		const pinned = parseVersionSpec(`12.1.0+sha256.${'e'.repeat(64)}`, 'f');
+		const open = parseVersionSpec('^12', 'f');
+		expect(selectCandidate([pinned, open], [candidate('12.1.0', null)], node)).toMatchObject({
+			selection: { hash: null },
+		});
+		expect(selectCandidate([open, pinned], [candidate('12.1.0', null)], node)).toMatchObject({
+			selection: { hash: null },
+		});
+	});
+
 	it('carries a sha256 pin to the verifier instead of deciding here', () => {
 		const pinned = parseVersionSpec(`12.1.0+sha256.${'e'.repeat(64)}`, 'f');
 		expect(selectCandidate([pinned], [candidate('12.1.0', null)], node)).toMatchObject({

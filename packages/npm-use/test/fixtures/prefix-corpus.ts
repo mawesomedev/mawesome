@@ -28,6 +28,7 @@ export const prefixCorpus: PrefixCase[] = [
 			{ cwd: '.', argv: ['i', '--location=global', 'x'], root: null },
 			{ cwd: '.', argv: ['i', '--location', 'project', 'x'], root: '.' },
 			{ cwd: '.', argv: ['i', '-g', '--location=project', 'x'], root: null },
+			{ cwd: '.', argv: ['i', '--no-global', '--location=global', 'x'], root: null },
 			{ cwd: '.', argv: ['run', 'build', '--', '-g'], root: '.' },
 		],
 	},
@@ -35,6 +36,14 @@ export const prefixCorpus: PrefixCase[] = [
 		name: 'node_modules without a manifest',
 		tree: { node_modules: { '.keep': '' }, sub: {} },
 		runs: [{ cwd: 'sub', argv: ['ls'], root: '.' }],
+	},
+	{
+		name: 'a package.json directory is not a manifest',
+		tree: {
+			'package.json': manifest(),
+			nested: { 'package.json': { 'not-a-file': '' }, deep: {} },
+		},
+		runs: [{ cwd: 'nested/deep', argv: ['ls'], root: '.' }],
 	},
 	{
 		name: 'nothing above',

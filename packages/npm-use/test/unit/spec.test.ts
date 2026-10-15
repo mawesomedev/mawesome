@@ -98,6 +98,27 @@ describe('parseSpecs', () => {
 		expect(pnpmOnly?.field).toBe('packageManager');
 	});
 
+	it('attaches the declared policy to a broken version so the caller can honour it', () => {
+		try {
+			parseSpecs({
+				devEngines: {
+					packageManager: [
+						{ name: 'npm', version: 'latest' },
+						{ name: 'pnpm', onFail: 'warn' },
+					],
+				},
+			});
+			throw new Error('expected a SpecError');
+		} catch (error) {
+			expect(error).toBeInstanceOf(SpecError);
+			expect((error as SpecError).onFail).toBe('warn');
+			expect((error as SpecError).message).toContain('"latest"');
+		}
+		expect(() =>
+			parseSpecs({ devEngines: { packageManager: { name: 'npm', version: '\u001b[31mred' } } }),
+		).toThrow(/\\u001b/);
+	});
+
 	it('rejects malformed entries', () => {
 		expect(() => parseSpecs({ devEngines: { packageManager: 'npm' } })).toThrow(SpecError);
 		expect(() =>

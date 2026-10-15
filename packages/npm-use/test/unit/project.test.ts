@@ -33,8 +33,15 @@ describe('isGlobalMode', () => {
 		expect(
 			isGlobalMode(parsePrefixFlags(['--no-global'], '/cwd'), { npm_config_global: 'true' }),
 		).toBe(false);
+		// Either setting makes the call global, as in npm: `--location=project` does not undo an env `global`.
 		expect(
 			isGlobalMode(parsePrefixFlags(['--location=project'], '/cwd'), { npm_config_global: 'true' }),
+		).toBe(true);
+		expect(isGlobalMode(parsePrefixFlags(['--no-global', '--location=global'], '/cwd'), {})).toBe(
+			true,
+		);
+		expect(
+			isGlobalMode(parsePrefixFlags(['--no-global'], '/cwd'), { npm_config_location: 'user' }),
 		).toBe(false);
 	});
 });

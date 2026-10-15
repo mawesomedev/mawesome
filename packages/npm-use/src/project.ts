@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, matchesGlob, relative, resolve, sep } from 'node:path';
 
 export interface ProjectLocation {
@@ -89,20 +89,19 @@ export function parsePrefixFlags(argv: readonly string[], cwd: string): CliFlags
 
 /** Global mode from the command line and the npm env, CLI winning (spec RES-3). */
 export function isGlobalMode(flags: CliFlags, env: NodeJS.ProcessEnv): boolean {
-	if (flags.global !== null) {
-		return flags.global;
-	}
-	if (flags.location !== null) {
-		return flags.location === 'global';
-	}
-	if (env['npm_config_global'] !== undefined) {
-		return env['npm_config_global'] === 'true';
-	}
-	return env['npm_config_location'] === 'global';
+	// npm: `global || location === 'global'`, each setting resolved on its own, CLI over env.
+	const fromEnv = env['npm_config_global'];
+	const global = flags.global ?? (fromEnv === undefined ? null : fromEnv === 'true');
+	const location = flags.location ?? env['npm_config_location'] ?? null;
+	return global === true || location === 'global';
 }
 
 function hasPackageJson(dir: string): boolean {
-	return existsSync(join(dir, 'package.json'));
+	try {
+		return statSync(join(dir, 'package.json')).isFile();
+	} catch {
+		return false;
+	}
 }
 
 function hasNodeModules(dir: string): boolean {

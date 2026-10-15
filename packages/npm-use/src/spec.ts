@@ -31,6 +31,8 @@ export interface ParsedSpecs {
 export class SpecError extends Error {
 	override name = 'SpecError';
 	readonly field: string;
+	/** The project's policy for this failure, when the entry declaring it could still be read. */
+	onFail: OnFail = 'error';
 
 	constructor(field: string, message: string) {
 		super(message);
@@ -57,11 +59,14 @@ export function parseVersionSpec(raw: string, field: string): NpmSpec {
 		hash = parseHash(raw.slice(plus + 1), field);
 	}
 	if (semver.validRange(range) === null) {
-		throw new SpecError(field, `${field}: "${raw}" is not a semver range`);
+		throw new SpecError(field, `${field}: ${JSON.stringify(raw)} is not a semver range`);
 	}
 	const exact = semver.valid(range);
 	if (hash !== null && exact === null) {
-		throw new SpecError(field, `${field}: a hash needs an exact version, got "${raw}"`);
+		throw new SpecError(
+			field,
+			`${field}: a hash needs an exact version, got ${JSON.stringify(raw)}`,
+		);
 	}
 	return { range, exact, hash };
 }
@@ -69,7 +74,7 @@ export function parseVersionSpec(raw: string, field: string): NpmSpec {
 function parseHash(suffix: string, field: string): SpecHash {
 	const match = /^(sha512|sha256|sha224)\.([0-9a-fA-F]+)$/.exec(suffix);
 	if (match === null) {
-		throw new SpecError(field, `${field}: unsupported hash suffix "+${suffix}"`);
+		throw new SpecError(field, `${field}: unsupported hash suffix ${JSON.stringify(`+${suffix}`)}`);
 	}
 	const algorithm = match[1] as HashAlgorithm;
 	const hex = (match[2] as string).toLowerCase();
@@ -126,30 +131,36 @@ function parseDevEngines(value: unknown): ParsedSpecs | null {
 		return null;
 	}
 	const specs: NpmSpec[] = [];
-	for (const entry of entries) {
-		if (!isObject(entry)) {
-			throw new SpecError(field, `${field}: every entry must be an object`);
+	// The policy comes first, so an entry with a broken version still fails the way it asked to.
+	const last = entries[entries.length - 1];
+	const onFail = isObject(last) ? parseOnFail(last, field) : 'error';
+	try {
+		for (const entry of entries) {
+			if (!isObject(entry)) {
+				throw new SpecError(field, `${field}: every entry must be an object`);
+			}
+			if (entry['name'] !== 'npm') {
+				continue;
+			}
+			const version = entry['version'];
+			if (version === undefined) {
+				specs.push({ range: '*', exact: null, hash: null });
+			} else if (typeof version === 'string') {
+				specs.push(parseVersionSpec(version, field));
+			} else {
+				throw new SpecError(field, `${field}: version must be a string`);
+			}
 		}
-		if (entry['name'] !== 'npm') {
-			continue;
+	} catch (error) {
+		if (error instanceof SpecError) {
+			error.onFail = onFail;
 		}
-		const version = entry['version'];
-		if (version === undefined) {
-			specs.push({ range: '*', exact: null, hash: null });
-		} else if (typeof version === 'string') {
-			specs.push(parseVersionSpec(version, field));
-		} else {
-			throw new SpecError(field, `${field}: version must be a string`);
-		}
+		throw error;
 	}
 	if (specs.length === 0) {
 		return null;
 	}
-	return {
-		specs,
-		onFail: parseOnFail(entries[entries.length - 1] as ManagerEntry, field),
-		field: 'devEngines',
-	};
+	return { specs, onFail, field: 'devEngines' };
 }
 
 function parseOnFail(entry: ManagerEntry, field: string): OnFail {

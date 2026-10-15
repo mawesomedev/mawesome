@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildTarball, type TarEntry } from '@mawesome/testing/registry/tar';
@@ -38,9 +38,10 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		const h = await start({});
 		writeFileSync(join(h.root, 'user', '.zshrc'), 'eval "$(fnm env)"\n');
 		const env = { ...h.env, SHELL: '/bin/zsh', ZDOTDIR: join(h.root, 'user') };
+		rmSync(h.home, { recursive: true, force: true });
 		const dry = await command(['setup', '--dry-run'], { home: h.home, env, cwd: h.project });
 		expect(dry.code).toBe(0);
-		expect(existsSync(join(h.home, 'bootstrap.cjs'))).toBe(false);
+		expect(existsSync(h.home)).toBe(false);
 		expect(readFileSync(join(h.root, 'user', '.zshrc'), 'utf8')).not.toContain('npm-use');
 
 		const declined = await command(['setup'], {

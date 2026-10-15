@@ -141,12 +141,7 @@ function rollback(context: CommandContext): number {
 	if (previous === null || !existsSync(versionDir(dirs.home, previous)) || current === null) {
 		throw new NpmUseError('M-ABI', EXIT.usage, 'No previous version to roll back to.');
 	}
-	if (
-		launcherAbiOf(join(versionDir(dirs.home, previous), BOOTSTRAP_FILE)) !==
-		currentLauncherAbi(context)
-	) {
-		installLaunchers(context, previous);
-	}
+	// The newer launcher still runs the previous runtime, so `current` moves first; the older launcher could not run the newer runtime.
 	mutateFile(
 		dirs.journal,
 		'launcher',
@@ -154,6 +149,12 @@ function rollback(context: CommandContext): number {
 		join(dirs.home, 'current'),
 		Buffer.from(`${previous}\n`),
 	);
+	if (
+		launcherAbiOf(join(versionDir(dirs.home, previous), BOOTSTRAP_FILE)) !==
+		currentLauncherAbi(context)
+	) {
+		installLaunchers(context, previous);
+	}
 	atomicWrite(join(dirs.home, PREVIOUS_FILE), `${current}\n`);
 	io.out(
 		context.json

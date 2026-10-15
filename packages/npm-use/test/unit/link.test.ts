@@ -5,6 +5,7 @@ import {
 	readFileSync,
 	symlinkSync,
 	writeFileSync,
+	rmSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -74,7 +75,7 @@ describe('link and unlink', () => {
 		const nvmDir = fakeNvm(root, ['24.0.0']);
 		const dirs = resolveDirs({}, join(root, 'home'), 'linux', { id: 'm', fallback: false });
 		const binDir = join(nvmDir, 'versions', 'node', 'v24.0.0', 'bin');
-		const targets = linkTargets(binDir, join(root, 'home'), 'linux', true);
+		const targets = linkTargets(join(root, 'home'), 'linux', true);
 		expect(targets.map((target) => target.name)).toEqual(['npm', 'npx']);
 		const first = targets.map((target) => linkOne(dirs, owner, binDir, target));
 		expect(first.map((result) => result.outcome)).toEqual(['linked', 'linked']);
@@ -101,7 +102,7 @@ describe('link and unlink', () => {
 		const nvmDir = fakeNvm(root, ['24.0.0']);
 		const dirs = resolveDirs({}, join(root, 'home'), 'linux', { id: 'm', fallback: false });
 		const binDir = join(nvmDir, 'versions', 'node', 'v24.0.0', 'bin');
-		const [npm] = linkTargets(binDir, join(root, 'home'), 'linux', true);
+		const [npm] = linkTargets(join(root, 'home'), 'linux', true);
 		writeFileSync(join(binDir, 'npm.npm-use-original'), 'leftover');
 		expect(linkOne(dirs, owner, binDir, npm!)).toMatchObject({ outcome: 'foreign' });
 		expect(lstatSync(join(binDir, 'npm')).isSymbolicLink()).toBe(true);
@@ -111,7 +112,7 @@ describe('link and unlink', () => {
 		const freshNvm = fakeNvm(fresh, ['24.0.0']);
 		const freshDirs = resolveDirs({}, join(fresh, 'home'), 'linux', { id: 'm', fallback: false });
 		const freshBin = join(freshNvm, 'versions', 'node', 'v24.0.0', 'bin');
-		const [freshNpm] = linkTargets(freshBin, join(fresh, 'home'), 'linux', true);
+		const [freshNpm] = linkTargets(join(fresh, 'home'), 'linux', true);
 		expect(linkOne(freshDirs, owner, freshBin, freshNpm!).outcome).toBe('linked');
 		writeFileSync(join(freshBin, 'npm'), '#!/bin/sh\nexec node npm-11\n');
 		const entry = readLinks(freshDirs).entries[0]!;
@@ -122,10 +123,62 @@ describe('link and unlink', () => {
 		expect(existsSync(join(freshBin, 'npm.npm-use-original'))).toBe(true);
 	});
 
+	it('rewrites a changed shim in place, keeps the original, and recovers a crash that left the target missing', () => {
+		const root = makeTree({ home: {} });
+		const nvmDir = fakeNvm(root, ['24.0.0']);
+		const dirs = resolveDirs({}, join(root, 'home'), 'linux', { id: 'm', fallback: false });
+		const binDir = join(nvmDir, 'versions', 'node', 'v24.0.0', 'bin');
+		const [npm] = linkTargets(join(root, 'home'), 'linux', true);
+		expect(linkOne(dirs, owner, binDir, npm!).outcome).toBe('linked');
+		// A new template: the shim is replaced, the preserved original is untouched.
+		expect(
+			linkOne(dirs, owner, binDir, { ...npm!, content: `${npm!.content}# v2\n` }).outcome,
+		).toBe('linked');
+		expect(readFileSync(join(binDir, 'npm'), 'utf8')).toContain('# v2');
+		expect(lstatSync(join(binDir, 'npm.npm-use-original')).isSymbolicLink()).toBe(true);
+		expect(readLinks(dirs).entries).toHaveLength(1);
+		// A crash after moving the original aside: the next link and the next unlink both restore it first.
+		rmSync(join(binDir, 'npm'));
+		expect(linkOne(dirs, owner, binDir, npm!).outcome).toBe('linked');
+		expect(readFileSync(join(binDir, 'npm'), 'utf8')).toBe(npm!.content);
+		rmSync(join(binDir, 'npm'));
+		expect(unlinkOne(dirs, owner, readLinks(dirs).entries[0]!)).toBe('restored');
+		expect(lstatSync(join(binDir, 'npm')).isSymbolicLink()).toBe(true);
+		expect(existsSync(join(binDir, 'npm.npm-use-original'))).toBe(false);
+	});
+
+	it('moves a blocked .ps1 aside and puts it back on unlink', () => {
+		const root = makeTree({
+			home: {},
+			bin: {
+				'npm.ps1': 'original ps1',
+				'npx.ps1': 'x',
+				npm: 'n',
+				npx: 'x',
+				'npm.cmd': 'c',
+				'npx.cmd': 'c',
+			},
+		});
+		const dirs = resolveDirs({}, join(root, 'home'), 'linux', { id: 'm', fallback: false });
+		const ps1 = linkTargets(join(root, 'home'), 'win32', false).find(
+			(target) => target.name === 'npm.ps1',
+		)!;
+		expect(ps1.content).toBeNull();
+		expect(linkOne(dirs, owner, join(root, 'bin'), ps1).outcome).toBe('linked');
+		expect(existsSync(join(root, 'bin', 'npm.ps1'))).toBe(false);
+		expect(readFileSync(join(root, 'bin', 'npm.ps1.npm-use-original'), 'utf8')).toBe(
+			'original ps1',
+		);
+		expect(linkOne(dirs, owner, join(root, 'bin'), ps1).outcome).toBe('already');
+		const entry = readLinks(dirs).entries.find((item) => item.name === 'npm.ps1')!;
+		expect(unlinkOne(dirs, owner, entry)).toBe('restored');
+		expect(readFileSync(join(root, 'bin', 'npm.ps1'), 'utf8')).toBe('original ps1');
+	});
+
 	it('reports a missing entry point', () => {
 		const root = makeTree({ home: {}, bin: {} });
 		const dirs = resolveDirs({}, join(root, 'home'), 'linux', { id: 'm', fallback: false });
-		const [npm] = linkTargets(join(root, 'bin'), join(root, 'home'), 'linux', true);
+		const [npm] = linkTargets(join(root, 'home'), 'linux', true);
 		expect(linkOne(dirs, owner, join(root, 'bin'), npm!).outcome).toBe('missing');
 	});
 });

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { EXIT, isNpmUseError } from './errors.ts';
-import { lockedMessage } from './messages.ts';
+import { changedMessage, lockedMessage } from './messages.ts';
 import { resolveNpmWith, type ResolveProviders } from './index.ts';
 import type { Installer } from './install/index.ts';
 import { findOwnNpm } from './own-npm.ts';
@@ -66,7 +66,10 @@ async function recoverLeftovers(home: string): Promise<void> {
 		return;
 	}
 	try {
-		recoverDeadJournals(dirs.journal, dirs.machine.id);
+		const report = recoverDeadJournals(dirs.journal, dirs.machine.id);
+		for (const id of report.changed) {
+			process.stderr.write(`npm-use: ${changedMessage(id, 'leftover change')}\n`);
+		}
 	} finally {
 		lock.release();
 	}

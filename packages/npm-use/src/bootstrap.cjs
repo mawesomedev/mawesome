@@ -85,13 +85,50 @@ function projectDeclaresNpm() {
 	}
 }
 
-/** Runs a Node script with the inherited stdio and mirrors its exit, by code or by signal. */
+/** Runs a Node script with the inherited stdio, forwarding signals as the runtime does (spec RUN-4, RUN-5). */
 function runScript(script, args) {
 	var child = childProcess.spawn(process.execPath, [script].concat(args), { stdio: 'inherit' });
+	var handlers = [];
+	var alive = true;
+	function forward(signal) {
+		if (alive) {
+			child.kill(signal);
+		}
+	}
+	function later(signal) {
+		var timer = setTimeout(function () {
+			forward(signal);
+		}, 1000);
+		if (timer.unref) {
+			timer.unref();
+		}
+	}
+	if (process.platform !== 'win32') {
+		var now = ['SIGTERM', 'SIGHUP'];
+		var delayed = ['SIGINT', 'SIGQUIT'];
+		var i;
+		for (i = 0; i < now.length; i += 1) {
+			handlers.push([now[i], forward.bind(null, now[i])]);
+		}
+		for (i = 0; i < delayed.length; i += 1) {
+			handlers.push([delayed[i], later.bind(null, delayed[i])]);
+		}
+		for (i = 0; i < handlers.length; i += 1) {
+			process.on(handlers[i][0], handlers[i][1]);
+		}
+	}
+	function cleanup() {
+		alive = false;
+		for (var j = 0; j < handlers.length; j += 1) {
+			process.removeListener(handlers[j][0], handlers[j][1]);
+		}
+	}
 	child.on('error', function (error) {
+		cleanup();
 		fail('cannot start ' + script + ': ' + error.message, 1);
 	});
 	child.on('exit', function (code, signal) {
+		cleanup();
 		if (signal) {
 			process.kill(process.pid, signal);
 			return;

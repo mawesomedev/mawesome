@@ -5,7 +5,9 @@ import {
 	PROVENANCE_IDENTITY,
 	SLSA_PREDICATE,
 	verifyProvenance,
+	tlsOptions,
 } from '../../src/install/provenance.ts';
+import { join } from 'node:path';
 import { makeTree } from '../helpers/tree.ts';
 
 const config: NpmConfigView = {
@@ -154,6 +156,36 @@ describe('verifyProvenance', () => {
 				env: {},
 			}),
 		).rejects.toThrow(/cannot fetch attestations: offline/);
+	});
+
+	it('checks the predicate inside the signed statement, not only the registry label', async () => {
+		const statement = {
+			subject: [{ name: 'pkg:npm/%40mawesome/npm-use@1.2.3', digest: { sha512: 'ab'.repeat(64) } }],
+			predicateType: 'https://other.example/v1',
+		};
+		const bundle = {
+			dsseEnvelope: { payload: Buffer.from(JSON.stringify(statement)).toString('base64') },
+		};
+		await expect(
+			verifyProvenance(input, {
+				fetch: async () => [{ predicateType: SLSA_PREDICATE, bundle }],
+				verify,
+				env: {},
+			}),
+		).rejects.toThrow(/not SLSA provenance/);
+	});
+
+	it('passes cafile and the registry client certificate to the fetch', () => {
+		const root = makeTree({ 'ca.pem': 'CA', 'cert.pem': 'CERT', 'key.pem': 'KEY' });
+		expect(
+			tlsOptions({
+				...config,
+				ca: ['inline'],
+				cafile: join(root, 'ca.pem'),
+				credentials: { certfile: join(root, 'cert.pem'), keyfile: join(root, 'key.pem') },
+			}),
+		).toEqual({ rejectUnauthorized: true, ca: ['inline', 'CA'], cert: 'CERT', key: 'KEY' });
+		expect(tlsOptions({ ...config, strictSsl: false })).toEqual({ rejectUnauthorized: false });
 	});
 
 	it('exposes the proxy settings to sigstore only for the duration of the call', async () => {

@@ -74,9 +74,11 @@ export function selectCandidate(
 	let best: Selection | null = null;
 	let excluded: Candidate | null = null;
 	for (const candidate of candidates) {
-		const spec = specs.find(
+		const matching = specs.filter(
 			(entry) => matchesRange(candidate.version, entry) && hashAccepts(candidate, entry),
 		);
+		// An unpinned alternative is preferred: a sha256 or sha224 pin can only be judged after the download.
+		const spec = matching.find((entry) => entry.hash === null) ?? matching[0];
 		if (spec === undefined) {
 			continue;
 		}

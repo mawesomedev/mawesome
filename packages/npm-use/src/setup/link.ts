@@ -1,17 +1,21 @@
 import {
+	copyFileSync,
 	existsSync,
 	lstatSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	realpathSync,
 	renameSync,
+	rmSync,
+	symlinkSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { atomicWrite, withSharingRetry } from '../state/atomic.ts';
 import { mutateFile } from '../state/journal.ts';
 import type { OwnerRecord } from '../state/lease.ts';
-import { captureMeta, metaMatches, type Meta } from '../state/meta.ts';
+import { captureMeta, metaMatches, MISSING, type Meta } from '../state/meta.ts';
 import type { Dirs } from './home.ts';
 import { cmdShim, posixShim, powershellShim, type ShimName } from './shims.ts';
 
@@ -136,24 +140,31 @@ export function findNodeInstalls(
 	return installs;
 }
 
-/** The files `--link` replaces in one install, with the shim content each gets. */
+/** A file `--link` touches in one install: a shim to write, or `content: null` for a file to move aside (WIN-2). */
+export interface LinkTarget {
+	name: string;
+	content: string | null;
+	mode: number;
+}
+
+/** The files `--link` replaces in one install; blocked `.ps1` files are moved aside so `.cmd` wins. */
 export function linkTargets(
-	binDir: string,
 	home: string,
 	platform: NodeJS.Platform,
 	powershell: boolean,
-): Array<{ name: string; content: string; mode: number }> {
-	const targets: Array<{ name: string; content: string; mode: number }> = [];
+): LinkTarget[] {
+	const targets: LinkTarget[] = [];
 	for (const name of ['npm', 'npx'] as const satisfies readonly ShimName[]) {
 		targets.push({ name, content: posixShim(home, name), mode: 0o755 });
 		if (platform === 'win32') {
 			targets.push({ name: `${name}.cmd`, content: cmdShim(home, name), mode: 0o644 });
-			if (powershell) {
-				targets.push({ name: `${name}.ps1`, content: powershellShim(home, name), mode: 0o644 });
-			}
+			targets.push({
+				name: `${name}.ps1`,
+				content: powershell ? powershellShim(home, name) : null,
+				mode: 0o644,
+			});
 		}
 	}
-	void binDir;
 	return targets;
 }
 
@@ -165,66 +176,158 @@ export interface LinkResult {
 	detail?: string;
 }
 
-function isOurShim(content: string, expected: string): boolean {
-	return content === expected;
+/** Keeps a copy of the original beside the target; a symlink is copied as a symlink. */
+function preserveOriginal(path: string, originalPath: string, meta: Meta): void {
+	if (meta.type === 'symlink') {
+		symlinkSync(readlinkSync(path), originalPath);
+	} else {
+		copyFileSync(path, originalPath);
+	}
+}
+
+/** Puts the preserved original back in place of whatever is (or is not) at the target. */
+function restoreOriginal(dirs: Dirs, owner: OwnerRecord, entry: LinkRecord): void {
+	const originalPath = entry.originalPath as string;
+	if (entry.original.type === 'symlink') {
+		mutateFile(dirs.journal, 'link', owner, entry.target, null);
+		withSharingRetry(() => renameSync(originalPath, entry.target));
+		return;
+	}
+	mutateFile(
+		dirs.journal,
+		'link',
+		owner,
+		entry.target,
+		readFileSync(originalPath),
+		entry.original.mode || 0o755,
+	);
+	rmSync(originalPath, { force: true });
 }
 
 /**
- * Replaces one entry point with a shim (spec LNK-2, LNK-3): the original is renamed beside it and both are
- * recorded. A file matching neither our shim nor a known original is reported and left alone.
+ * Replaces one entry point with a shim (spec LNK-2, LNK-3). The original is copied beside the target and
+ * recorded before the journaled write, so a crash at any step leaves either a restorable original or the shim.
+ * A file matching neither our shim nor the recorded original is reported and left alone.
  */
 export function linkOne(
 	dirs: Dirs,
 	owner: OwnerRecord,
 	binDir: string,
-	target: { name: string; content: string; mode: number },
+	target: LinkTarget,
 ): LinkResult {
 	const path = join(binDir, target.name);
-	const records = readLinks(dirs);
-	const known = records.entries.find((entry) => entry.target === path);
-	const current = captureMeta(path);
+	const originalPath = `${path}${ORIGINAL_SUFFIX}`;
+	const known = readLinks(dirs).entries.find((entry) => entry.target === path);
+	let current = captureMeta(path);
+	if (
+		current.type === 'missing' &&
+		known !== undefined &&
+		known.shim.type !== 'missing' &&
+		known.originalPath !== null &&
+		existsSync(known.originalPath)
+	) {
+		// A crash between moving the original aside and writing the shim: put the original back first.
+		restoreOriginal(dirs, owner, known);
+		forget(dirs, known);
+		current = captureMeta(path);
+	}
+	if (target.content === null) {
+		return moveAside(dirs, owner, binDir, target.name, known);
+	}
 	if (current.type === 'missing') {
 		return { target: path, outcome: 'missing' };
 	}
-	if (current.type === 'file' && isOurShim(readFileSync(path, 'utf8'), target.content)) {
+	if (current.type === 'file' && readFileSync(path, 'utf8') === target.content) {
 		if (known === undefined) {
 			record(dirs, {
 				binDir,
 				name: target.name,
 				target: path,
-				originalPath: existsSync(`${path}${ORIGINAL_SUFFIX}`) ? `${path}${ORIGINAL_SUFFIX}` : null,
-				original: captureMeta(`${path}${ORIGINAL_SUFFIX}`),
+				originalPath: existsSync(originalPath) ? originalPath : null,
+				original: captureMeta(originalPath),
 				shim: current,
 				linkedAt: new Date().toISOString(),
 			});
 		}
 		return { target: path, outcome: 'already' };
 	}
-	if (known !== undefined && !metaMatches(path, known.original) && !metaMatches(path, known.shim)) {
+	if (known !== undefined && metaMatches(path, known.shim)) {
+		// Still our shim, only the template changed: rewrite it in place and keep the original where it is.
+		mutateFile(dirs.journal, 'link', owner, path, Buffer.from(target.content, 'utf8'), target.mode);
+		record(dirs, { ...known, shim: captureMeta(path), linkedAt: new Date().toISOString() });
+		return { target: path, outcome: 'linked' };
+	}
+	if (known !== undefined && !metaMatches(path, known.original)) {
 		return { target: path, outcome: 'foreign', detail: 'changed since npm-use linked it' };
 	}
-	const originalPath = `${path}${ORIGINAL_SUFFIX}`;
-	if (
-		existsSync(originalPath) &&
-		(known === undefined || !metaMatches(originalPath, known.original))
-	) {
+	if (existsSync(originalPath) && !metaMatches(originalPath, current)) {
 		return { target: path, outcome: 'foreign', detail: `${originalPath} already exists` };
 	}
 	try {
-		withSharingRetry(() => renameSync(path, originalPath));
+		if (!existsSync(originalPath)) {
+			preserveOriginal(path, originalPath, current);
+		}
 	} catch (error) {
 		return { target: path, outcome: 'unwritable', detail: (error as Error).message };
 	}
-	mutateFile(dirs.journal, 'link', owner, path, Buffer.from(target.content, 'utf8'), target.mode);
-	record(dirs, {
+	const entry: LinkRecord = {
 		binDir,
 		name: target.name,
 		target: path,
 		originalPath,
 		original: current,
-		shim: captureMeta(path),
+		shim: MISSING,
 		linkedAt: new Date().toISOString(),
-	});
+	};
+	record(dirs, entry);
+	try {
+		mutateFile(dirs.journal, 'link', owner, path, Buffer.from(target.content, 'utf8'), target.mode);
+	} catch (error) {
+		return { target: path, outcome: 'unwritable', detail: (error as Error).message };
+	}
+	record(dirs, { ...entry, shim: captureMeta(path) });
+	return { target: path, outcome: 'linked' };
+}
+
+/** Moves a file aside without a replacement, for Node's `.ps1` entry points when scripts are blocked. */
+function moveAside(
+	dirs: Dirs,
+	owner: OwnerRecord,
+	binDir: string,
+	name: string,
+	known: LinkRecord | undefined,
+): LinkResult {
+	const path = join(binDir, name);
+	const originalPath = `${path}${ORIGINAL_SUFFIX}`;
+	const current = captureMeta(path);
+	if (current.type === 'missing') {
+		return {
+			target: path,
+			outcome: known !== undefined && existsSync(originalPath) ? 'already' : 'missing',
+		};
+	}
+	if (known !== undefined && !metaMatches(path, known.original)) {
+		return { target: path, outcome: 'foreign', detail: 'changed since npm-use linked it' };
+	}
+	if (existsSync(originalPath) && !metaMatches(originalPath, current)) {
+		return { target: path, outcome: 'foreign', detail: `${originalPath} already exists` };
+	}
+	const entry: LinkRecord = {
+		binDir,
+		name,
+		target: path,
+		originalPath,
+		original: current,
+		shim: MISSING,
+		linkedAt: new Date().toISOString(),
+	};
+	record(dirs, entry);
+	try {
+		withSharingRetry(() => renameSync(path, originalPath));
+	} catch (error) {
+		return { target: path, outcome: 'unwritable', detail: (error as Error).message };
+	}
+	void owner;
 	return { target: path, outcome: 'linked' };
 }
 
@@ -233,16 +336,21 @@ export type UnlinkOutcome = 'restored' | 'changed' | 'missing';
 /** Puts the original back only when the shim is still ours (spec MUT-5); a replaced file is left as is. */
 export function unlinkOne(dirs: Dirs, owner: OwnerRecord, entry: LinkRecord): UnlinkOutcome {
 	const current = captureMeta(entry.target);
+	const hasOriginal = entry.originalPath !== null && existsSync(entry.originalPath);
 	if (current.type === 'missing') {
+		if (hasOriginal) {
+			restoreOriginal(dirs, owner, entry);
+			forget(dirs, entry);
+			return 'restored';
+		}
 		forget(dirs, entry);
 		return 'missing';
 	}
-	if (!metaMatches(entry.target, entry.shim)) {
+	if (entry.shim.type !== 'missing' && !metaMatches(entry.target, entry.shim)) {
 		return 'changed';
 	}
-	if (entry.originalPath !== null && existsSync(entry.originalPath)) {
-		mutateFile(dirs.journal, 'link', owner, entry.target, null);
-		withSharingRetry(() => renameSync(entry.originalPath as string, entry.target));
+	if (hasOriginal) {
+		restoreOriginal(dirs, owner, entry);
 	} else {
 		mutateFile(dirs.journal, 'link', owner, entry.target, null);
 	}

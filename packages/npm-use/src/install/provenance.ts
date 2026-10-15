@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Agent, ProxyAgent, request, type Dispatcher } from 'undici';
 import { EXIT, NpmUseError } from '../errors.ts';
@@ -51,6 +51,27 @@ export function attestationUrl(
 	return new URL(`-/npm/v1/attestations/${encodeURIComponent(input.name)}@${input.version}`, base);
 }
 
+/** TLS settings npm itself would use: `ca` and `cafile`, `strict-ssl`, and the registry's client certificate (spec DL-2). */
+export function tlsOptions(config: NpmConfigView): {
+	rejectUnauthorized: boolean;
+	ca?: string[];
+	cert?: string;
+	key?: string;
+} {
+	const ca = [...(config.ca ?? [])];
+	if (config.cafile !== null) {
+		ca.push(readFileSync(config.cafile, 'utf8'));
+	}
+	const { certfile, keyfile } = config.credentials;
+	return {
+		rejectUnauthorized: config.strictSsl,
+		...(ca.length === 0 ? {} : { ca }),
+		...(certfile !== undefined && keyfile !== undefined
+			? { cert: readFileSync(certfile, 'utf8'), key: readFileSync(keyfile, 'utf8') }
+			: {}),
+	};
+}
+
 function dispatcherFor(config: NpmConfigView, url: URL): Dispatcher {
 	const proxy = url.protocol === 'https:' ? (config.httpsProxy ?? config.proxy) : config.proxy;
 	const bypass = (config.noproxy ?? '')
@@ -58,10 +79,7 @@ function dispatcherFor(config: NpmConfigView, url: URL): Dispatcher {
 		.map((item) => item.trim())
 		.filter((item) => item !== '')
 		.some((item) => url.hostname === item || url.hostname.endsWith(`.${item.replace(/^\./, '')}`));
-	const tls = {
-		rejectUnauthorized: config.strictSsl,
-		...(config.ca === null ? {} : { ca: config.ca }),
-	};
+	const tls = tlsOptions(config);
 	if (proxy !== null && !bypass) {
 		return new ProxyAgent({ uri: proxy, requestTls: tls });
 	}
@@ -159,6 +177,14 @@ export async function verifyProvenance(
 	const statement = statementOf(provenance.bundle);
 	if (statement === null) {
 		throw failure(name, version, 'the attestation bundle carries no readable in-toto statement');
+	}
+	// The registry's label is unsigned; the statement inside the envelope is what the signature covers.
+	if (statement.predicateType !== SLSA_PREDICATE) {
+		throw failure(
+			name,
+			version,
+			`the signed statement is ${statement.predicateType}, not SLSA provenance`,
+		);
 	}
 	// npm's provenance encodes the scope marker only: `pkg:npm/%40scope/name@version`.
 	const expectedSubject = `pkg:npm/${name.replace(/^@/, '%40')}@${version}`;

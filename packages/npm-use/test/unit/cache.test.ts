@@ -10,7 +10,7 @@ import {
 	validateEntry,
 } from '../../src/install/cache.ts';
 import { writeVerified } from '../../src/install/verify.ts';
-import { ownerRecord } from '../../src/state/lease.ts';
+import { createGate, ownerRecord, removeGate } from '../../src/state/lease.ts';
 import { makeTree, removeTrees } from '../helpers/tree.ts';
 
 afterEach(removeTrees);
@@ -92,6 +92,21 @@ describe('publishEntry', () => {
 		expect(published.entryPath).toBe(canonical);
 		expect(existsSync(join(root, 'temp'))).toBe(false);
 		expect(readdirSync(`${canonical}.leases`)).toHaveLength(1);
+	});
+
+	it('publishes privately while a live prune gate guards the canonical path', () => {
+		const root = makeTree({
+			temp: { 'package.json': JSON.stringify({ name: 'npm', version: '12.0.0' }) },
+		});
+		const canonical = canonicalEntry(root, '12.0.0', integrity);
+		mkdirSync(join(root, 'npm'), { recursive: true });
+		createGate(canonical, owner);
+		const published = publishEntry(join(root, 'temp'), canonical, integrity, owner);
+		expect(published.entryPath).not.toBe(canonical);
+		expect(published.entryPath.startsWith(`${canonical}.`)).toBe(true);
+		expect(existsSync(canonical)).toBe(false);
+		expect(readdirSync(`${canonical}.leases`)).toEqual([]);
+		removeGate(canonical);
 	});
 
 	it('sidesteps an invalid canonical entry with a private one and leaves the invalid one alone', () => {

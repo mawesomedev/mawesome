@@ -17,7 +17,7 @@ import {
 
 export type { NpmSpec, OnFail, ParsedSpecs } from './spec.ts';
 export type { Candidate, Selection } from './select.ts';
-export { selectCandidate } from './select.ts';
+export { selectCandidate, sriHex } from './select.ts';
 export { parseSpecs, parseVersionSpec, SpecError } from './spec.ts';
 export { findProject } from './project.ts';
 export { EXIT, isNpmUseError, NpmUseError } from './errors.ts';
@@ -125,7 +125,17 @@ export async function resolveNpmWith(
 		source = { file: 'NPM_USE_VERSION', field: 'env' };
 	} else {
 		const file = join(project.root, 'package.json');
-		const read = readSpecs(file);
+		let read: ParsedSpecs | null;
+		try {
+			read = readSpecs(file);
+		} catch (error) {
+			if (!(error instanceof SpecError)) {
+				throw error;
+			}
+			const message = `${file}: ${error.message}`;
+			const failure = new NpmUseError('M-NOMATCH', EXIT.resolution, message);
+			return applyPolicy(error.onFail, failure, () => ownResult(project.root, null, message));
+		}
 		if (read === null) {
 			return ownResult(project.root, null, null);
 		}
@@ -211,14 +221,7 @@ function readSpecs(file: string): ParsedSpecs | null {
 			`${file} is not valid JSON: ${(error as Error).message}`,
 		);
 	}
-	try {
-		return parseSpecs(pkg);
-	} catch (error) {
-		if (error instanceof SpecError) {
-			throw new NpmUseError('M-NOMATCH', EXIT.resolution, `${file}: ${error.message}`);
-		}
-		throw error;
-	}
+	return parseSpecs(pkg);
 }
 
 function nonEmpty(value: string | undefined): boolean {

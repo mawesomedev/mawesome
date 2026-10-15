@@ -191,6 +191,8 @@ describe('npm-use action', { timeout: 120_000 }, () => {
 		expect(
 			second.registry.requests.slice(before).filter((request) => request.path.endsWith('.tgz')),
 		).toHaveLength(0);
+		// The exact key the first run saved is the one the second run asked for first.
+		expect(cache.restores.at(-1)).toBe([...cache.saved.keys()][0]);
 	});
 
 	it('offline: a restored tarball still works, and one that no longer fits is replaced', async () => {

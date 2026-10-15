@@ -1,7 +1,14 @@
-import { readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { sriHex, type Candidate } from '../select.ts';
-import { createLease, newToken, type Lease, type OwnerRecord } from '../state/lease.ts';
+import {
+	createLease,
+	gatePath,
+	newToken,
+	ownerLive,
+	type Lease,
+	type OwnerRecord,
+} from '../state/lease.ts';
 import { readVerified } from './verify.ts';
 
 export const ENTRIES_DIR = 'npm';
@@ -123,6 +130,11 @@ export function publishEntry(
 	owner: OwnerRecord,
 ): PublishedEntry {
 	const lease = createLease(canonical, owner);
+	// Lease first, then look for a live prune gate: a prune checks leases after creating its gate, so one side always sees the other.
+	if (existsSync(gatePath(canonical)) && ownerLive(gatePath(canonical))) {
+		lease.release();
+		return publishPrivately(tempDir, canonical, owner);
+	}
 	try {
 		renameSync(tempDir, canonical);
 		return { entryPath: canonical, lease };
@@ -137,6 +149,10 @@ export function publishEntry(
 		rmSync(tempDir, { recursive: true, force: true });
 		return { entryPath: canonical, lease: shared };
 	}
+	return publishPrivately(tempDir, canonical, owner);
+}
+
+function publishPrivately(tempDir: string, canonical: string, owner: OwnerRecord): PublishedEntry {
 	const entryPath = privateEntry(canonical, newToken());
 	const privateLease = createLease(entryPath, owner);
 	try {

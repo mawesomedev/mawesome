@@ -64,8 +64,16 @@ function tryCreate(path: string, record: LockRecord): boolean {
 	}
 	try {
 		writeSync(fd, JSON.stringify(record));
-	} finally {
 		closeSync(fd);
+	} catch (error) {
+		// A half-written lock would block everyone with no owner to release it.
+		try {
+			closeSync(fd);
+		} catch {
+			// Already closed.
+		}
+		rmSync(path, { force: true });
+		throw error;
 	}
 	return true;
 }

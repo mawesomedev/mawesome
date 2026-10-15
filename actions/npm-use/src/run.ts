@@ -12,6 +12,7 @@ import {
 	resolveNpmWith,
 	runCommand,
 	selectCandidate,
+	sriHex,
 	type Candidate,
 	type NpmSpec,
 	type ResolveResult,
@@ -261,8 +262,11 @@ async function restoreFromCache(
 	resolved: Candidate | null,
 	installer: ReturnType<typeof createInstaller>,
 ): Promise<{ entryPath: string; version: string; lease: { release(): void } } | null> {
+	// The saved key ends in the tarball's sha512 prefix, which equals the SRI digest once verified.
 	const primary =
-		resolved === null ? keyBase : `${keyBase}${resolved.version}-${hashOf(resolved.integrity)}`;
+		resolved === null
+			? keyBase
+			: `${keyBase}${resolved.version}-${(sriHex(resolved.integrity) ?? '').slice(0, 16)}`;
 	rmSync(artifactDir, { recursive: true, force: true });
 	const hit = await cache.restore([artifactDir], primary, [keyBase]);
 	if (hit === undefined) {

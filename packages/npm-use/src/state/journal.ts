@@ -139,7 +139,7 @@ function targetSha(target: string): string | null {
 }
 
 /**
- * Finishes or undoes one journal (spec MUT-2): a target already at the intended bytes is done; one still at the
+ * Finishes one journal (spec MUT-2): a target already at the intended bytes is done; one still at the
  * original is replayed from the staged copy; anything else is left alone and reported as changed (MUT-5).
  */
 export function recoverJournal(journalDir: string, journal: Journal, report: RecoveryReport): void {
@@ -168,24 +168,8 @@ export function recoverJournal(journalDir: string, journal: Journal, report: Rec
 		discard(journalDir, journal);
 		return;
 	}
-	if (
-		journal.backup !== null &&
-		existsSync(journal.backup) &&
-		journal.original.sha256 === sha256(readFileSync(journal.backup))
-	) {
-		// A partial or interrupted write: put the original back.
-		if (current === null || current !== journal.intended) {
-			atomicWrite(
-				journal.target,
-				readFileSync(journal.backup),
-				journal.original.mode || journal.mode,
-			);
-			report.rolledBack.push(journal.id);
-			discard(journalDir, journal);
-			return;
-		}
-	}
-	report.changed.push(journal.id);
+	// Writes are atomic renames, so a target matching neither side was changed by someone else: leave it.
+	report.changed.push(journal.target);
 	discard(journalDir, journal);
 }
 

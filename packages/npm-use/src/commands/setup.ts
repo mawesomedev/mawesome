@@ -119,9 +119,15 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 			'This npm-use installation ships no runtime build; reinstall the package.',
 		);
 	}
-	ensurePrivateDir(dirs.home, platform);
-	ensurePrivateDir(dirs.state, platform);
-	ensurePrivateDir(dirs.cache, platform);
+	for (const dir of [dirs.home, dirs.state, dirs.cache]) {
+		if (options.dryRun) {
+			if (existsSync(dir)) {
+				assertPrivateDir(dir, platform);
+			}
+		} else {
+			ensurePrivateDir(dir, platform);
+		}
+	}
 	const report: SetupReport = {
 		home: dirs.home,
 		version: context.version,
@@ -141,9 +147,12 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 		edit: planProfileEdit(target, dirs.home),
 	}));
 
-	const lock = await acquireLock(dirs.state, context.owner);
+	// A dry run writes nothing, not even the lock, so the home stays absent when it did not exist.
+	const lock = options.dryRun ? null : await acquireLock(dirs.state, context.owner);
 	try {
-		recoverDeadJournals(dirs.journal, dirs.machine.id);
+		if (lock !== null) {
+			recoverDeadJournals(dirs.journal, dirs.machine.id);
+		}
 		if (!options.dryRun) {
 			installRuntime(context, distDir);
 			for (const file of renderShims(dirs.home, platform, { powershell })) {
@@ -163,7 +172,7 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 		}
 		if (options.link) {
 			for (const install of findNodeInstalls(env, platform)) {
-				for (const target of linkTargets(install.binDir, dirs.home, platform, powershell)) {
+				for (const target of linkTargets(dirs.home, platform, powershell)) {
 					if (options.dryRun) {
 						report.links.push({
 							target: join(install.binDir, target.name),
@@ -191,7 +200,7 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 			}
 		}
 	} finally {
-		lock.release();
+		lock?.release();
 	}
 	report.skipped =
 		report.profiles.filter((entry) => entry.outcome === 'printed' || entry.outcome === 'declined')

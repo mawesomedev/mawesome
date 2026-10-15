@@ -81,8 +81,13 @@ export function installVersion(
 	copyTree(distDir, staging, files);
 	const manifest: VersionManifest = { version, abi, files: files.toSorted() };
 	writeFileSync(join(staging, MANIFEST_FILE), JSON.stringify(manifest, null, '\t'));
-	rmSync(target, { recursive: true, force: true });
+	// The old copy moves aside and the new one moves in: two renames, no window where the version is deleted.
+	const replaced = join(versions, `.${version}.replaced.${process.pid}.${Date.now()}`);
+	if (existsSync(target)) {
+		renameSync(target, replaced);
+	}
 	renameSync(staging, target);
+	rmSync(replaced, { recursive: true, force: true });
 	return target;
 }
 
