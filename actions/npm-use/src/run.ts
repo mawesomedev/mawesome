@@ -139,6 +139,7 @@ async function main(deps: RunDeps): Promise<void> {
 		if (restored === null) {
 			throw error;
 		}
+		pinForLaterSteps(restored.version);
 		emit({
 			version: restored.version,
 			kind: 'download',
@@ -210,6 +211,11 @@ async function main(deps: RunDeps): Promise<void> {
 		await store.save([artifactDir], (saved as { key: string }).key);
 	}
 	report(result, join(ensured.entryPath, 'bin', 'npm-cli.js'), false);
+}
+
+/** Later steps resolve through the shims again; the exact version stays pinned whatever directory they run in (spec ACT-1). */
+function pinForLaterSteps(version: string): void {
+	core.exportVariable('NPM_USE_VERSION', version);
 }
 
 /** The `node` the shims will resolve through PATH, asked for its own path and version. */
@@ -341,6 +347,7 @@ async function restoreFromCache(
 }
 
 function report(result: ResolveResult, cliPath: string, cacheHit: boolean): void {
+	pinForLaterSteps(result.version);
 	emit({
 		version: result.version,
 		kind: result.kind,

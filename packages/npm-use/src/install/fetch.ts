@@ -158,6 +158,7 @@ export class Transport {
 			'--loglevel=error',
 			// A packument's tarball URL never redirects the download to another host (spec SEC-7).
 			'--replace-registry-host=always',
+			...proxyFlags(this.#config),
 			'--fetch-retry-mintimeout=1000',
 			'--fetch-retry-maxtimeout=10000',
 			`--prefix=${cwd}`,
@@ -205,6 +206,21 @@ export class Transport {
 			rmSync(cwd, { recursive: true, force: true });
 		}
 	}
+}
+
+/** Proxy settings as flags, since the env the transport sees carries none (spec DL-2). */
+function proxyFlags(config: NpmConfigView): string[] {
+	const flags: string[] = [];
+	if (config.httpsProxy !== null) {
+		flags.push(`--https-proxy=${config.httpsProxy}`);
+	}
+	if (config.proxy !== null) {
+		flags.push(`--proxy=${config.proxy}`);
+	}
+	if (config.noproxy !== null) {
+		flags.push(`--noproxy=${config.noproxy}`);
+	}
+	return flags;
 }
 
 function parseJson(text: string): unknown {

@@ -98,7 +98,7 @@ class TransportFactory {
 		}
 		const cwd = newWorkDir(dirs.tmp);
 		try {
-			const config = await loadNpmConfig(own, env, cwd);
+			const config = await loadNpmConfig(own, env, cwd, this.#context.nodePath);
 			return {
 				transport: new Transport(own, config, env, dirs.tmp, this.#context.nodePath),
 				config,

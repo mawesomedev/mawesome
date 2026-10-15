@@ -261,7 +261,11 @@ export async function verifyProvenance(
 			(deps.verify ?? verifyBundle)(provenance.bundle, { tufCachePath }),
 		);
 	} catch (error) {
-		throw failure(name, version, `signature verification failed: ${(error as Error).message}`);
+		throw failure(
+			name,
+			version,
+			`signature verification failed: ${redactUrls((error as Error).message)}`,
+		);
 	}
 }
 

@@ -81,6 +81,7 @@ describe('attestationUrl', () => {
 		expect(redactUrls('see https://user:secret@registry.example/x and http://a@b/')).toBe(
 			'see https://***@registry.example/x and http://***@b/',
 		);
+		expect(redactUrls('https://user:p@ss@registry.example/')).toBe('https://***@registry.example/');
 	});
 
 	it('never follows an advertised path to another origin', () => {

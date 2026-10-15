@@ -17,6 +17,9 @@ describe('sanitizeEnv', () => {
 			HOME: '/home/me',
 		});
 		expect(clean).toEqual({ PATH: '/bin', HOME: '/home/me' });
+		expect(
+			sanitizeEnv({ HTTPS_PROXY: 'http://p', no_proxy: 'x', ALL_PROXY: 'y', KEEP: '1' }),
+		).toEqual({ KEEP: '1' });
 	});
 });
 

@@ -127,9 +127,15 @@ export function pruneCache(
 	for (const name of names) {
 		const entry = join(cacheRoot, ENTRIES_DIR, name);
 		// A lease dir whose entry is gone and whose owners are all dead is a crashed prune's leftover too.
-		if (name.endsWith('.leases') && !existsSync(entry.slice(0, -'.leases'.length))) {
+		if (
+			name.endsWith('.leases') &&
+			existsSync(entry) &&
+			!existsSync(entry.slice(0, -'.leases'.length))
+		) {
 			// Through the gate like any entry: a publisher creating its lease right now still wins.
-			pruneEntry(entry.slice(0, -'.leases'.length), owner);
+			(pruneEntry(entry.slice(0, -'.leases'.length), owner) ? report.removed : report.skipped).push(
+				name,
+			);
 			continue;
 		}
 		// A gate whose entry is gone and whose owner is dead is a crashed prune's leftover.

@@ -192,6 +192,9 @@ describe('link and unlink', () => {
 		expect(linkOne(dirs, owner, join(root, 'bin'), restricted).outcome).toBe('linked');
 		expect(existsSync(join(root, 'bin', 'npx.ps1'))).toBe(false);
 		expect(readFileSync(join(root, 'bin', 'npx.ps1.npm-use-original'), 'utf8')).toBe('x');
+		// Permissive again: the shim returns while the original stays aside for unlink.
+		expect(linkOne(dirs, owner, join(root, 'bin'), permissive).outcome).toBe('linked');
+		expect(readFileSync(join(root, 'bin', 'npx.ps1'), 'utf8')).toContain('bootstrap.cjs');
 		expect(
 			unlinkOne(
 				dirs,

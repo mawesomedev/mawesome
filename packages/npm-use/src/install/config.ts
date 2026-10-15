@@ -25,12 +25,14 @@ export interface NpmConfigView {
 }
 
 const DROPPED = new Set(['NODE_OPTIONS', 'NODE_EXTRA_CA_CERTS']);
+/** Proxy settings reach the transport only from the user and global npm config (spec DL-2), never the env. */
+const PROXY_VARS = /^(https?_proxy|all_proxy|no_proxy|proxy)$/i;
 
-/** The env without anything that would steer npm or Node: `npm_config_*`, `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS`. */
+/** The env without anything that would steer npm or Node: `npm_config_*`, proxies, `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS`. */
 export function sanitizeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 	const clean: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(env)) {
-		if (/^npm_config_/i.test(key) || DROPPED.has(key.toUpperCase())) {
+		if (/^npm_config_/i.test(key) || DROPPED.has(key.toUpperCase()) || PROXY_VARS.test(key)) {
 			continue;
 		}
 		clean[key] = value;
@@ -56,6 +58,7 @@ export async function loadNpmConfig(
 	own: OwnNpm,
 	env: NodeJS.ProcessEnv,
 	cwd: string,
+	nodePath: string = process.execPath,
 ): Promise<NpmConfigView> {
 	const { definitions, shorthands, flatten, nerfDarts } = npmDefinitions;
 	const config = new Config({
@@ -64,7 +67,9 @@ export async function loadNpmConfig(
 		flatten,
 		nerfDarts,
 		npmPath: own.root,
-		argv: [process.execPath, own.cliPath],
+		// The global prefix and its npmrc belong to the Node the shims run, not to this process.
+		argv: [nodePath, own.cliPath],
+		execPath: nodePath,
 		env: { ...sanitizeEnv(env) },
 		cwd,
 		excludeNpmCwd: true,

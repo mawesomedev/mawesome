@@ -234,6 +234,18 @@ export function linkOne(
 	if (target.content === null) {
 		return moveAside(dirs, owner, binDir, target.name, known);
 	}
+	if (
+		current.type === 'missing' &&
+		known !== undefined &&
+		known.shim.type === 'missing' &&
+		known.originalPath !== null &&
+		metaMatches(known.originalPath, known.original)
+	) {
+		// Moved aside under a restrictive policy that is permissive again: the shim goes in, the original stays aside.
+		mutateFile(dirs.journal, 'link', owner, path, Buffer.from(target.content, 'utf8'), target.mode);
+		record(dirs, { ...known, shim: captureMeta(path), linkedAt: new Date().toISOString() });
+		return { target: path, outcome: 'linked' };
+	}
 	if (current.type === 'missing') {
 		return { target: path, outcome: 'missing' };
 	}

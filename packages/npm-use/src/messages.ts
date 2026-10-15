@@ -4,7 +4,7 @@ import type { NpmSpec } from './spec.ts';
 
 /** Every URL in `text` with its user info replaced, so a registry token never reaches a terminal (spec SEC-10). */
 export function redactUrls(text: string): string {
-	return text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@]+)@/gi, '$1***@');
+	return text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/]*)@/gi, '$1***@');
 }
 
 export function describeSpecs(specs: readonly NpmSpec[]): string {
