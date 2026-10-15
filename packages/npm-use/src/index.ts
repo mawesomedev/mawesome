@@ -17,7 +17,15 @@ import {
 
 export type { NpmSpec, OnFail, ParsedSpecs } from './spec.ts';
 export type { Candidate, Selection } from './select.ts';
-export { EXIT, NpmUseError } from './errors.ts';
+export { selectCandidate } from './select.ts';
+export { parseSpecs, parseVersionSpec, SpecError } from './spec.ts';
+export { findProject } from './project.ts';
+export { EXIT, isNpmUseError, NpmUseError } from './errors.ts';
+export { createContext, createInstaller } from './install/index.ts';
+export type { EnsureOptions, InstallContext, Installer, PackedSource } from './install/index.ts';
+export { run as runCommand } from './commands/dispatch.ts';
+export type { CommandIo } from './commands/context.ts';
+export type { DispatchOptions } from './commands/dispatch.ts';
 
 export interface ResolveSource {
 	file: string;
@@ -33,6 +41,8 @@ export interface ResolveResult {
 	projectRoot: string | null;
 	/** Set for `cached` and `download`: what to fetch or verify. */
 	selection: Selection | null;
+	/** The project's npm requirements, when it declares any. */
+	specs: NpmSpec[] | null;
 	/** A warning to print on stderr before running Node's own npm (`onFail: warn`). */
 	warning: string | null;
 }
@@ -91,6 +101,7 @@ export async function resolveNpmWith(
 			source,
 			projectRoot,
 			selection: null,
+			specs: null,
 			warning,
 		};
 	};
@@ -153,6 +164,7 @@ export async function resolveNpmWith(
 			source,
 			projectRoot: project.root,
 			selection: result.selection,
+			specs: parsed.specs,
 			warning: null,
 		};
 	}

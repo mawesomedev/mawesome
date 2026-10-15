@@ -15,6 +15,8 @@
 	"dependencies": {
 		"@astrojs/starlight": "^0.42.0",
 		"@mawesome/dependency-audit": "workspace:*",
+		"@mawesome/npm-use": "workspace:*",
+		"@mawesome/npm-use-action": "workspace:*",
 		"@mawesome/pr-baseline": "workspace:*",
 		"@mawesome/pr-baseline-action": "workspace:*",
 		"astro": "^7.3.1",

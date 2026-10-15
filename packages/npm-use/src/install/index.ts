@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import semver from 'semver';
@@ -10,7 +11,13 @@ import type { NpmSpec } from '../spec.ts';
 import { acquireShared, ownerRecord, type Lease } from '../state/lease.ts';
 import { touchUsed } from '../state/prune.ts';
 import { resolveDirs, type Dirs } from '../setup/home.ts';
-import { canonicalEntry, listEntries, publishEntry, validateEntry } from './cache.ts';
+import {
+	canonicalEntry,
+	listEntries,
+	publishEntry,
+	validateEntry,
+	type PublishedEntry,
+} from './cache.ts';
 import { loadNpmConfig, type NpmConfigView } from './config.ts';
 import { newWorkDir, Transport, transportUsable, type RegistryVersion } from './fetch.ts';
 import { loadKeyring, type RegistryKey } from './keys.ts';
@@ -20,6 +27,7 @@ import {
 	safeExtract,
 	verifySignatures,
 	writeVerified,
+	type Digests,
 } from './verify.ts';
 
 export interface InstallContext {
@@ -85,9 +93,29 @@ class TransportFactory {
 	}
 }
 
+/** A downloaded tarball plus what the registry said about it, ready for verification. */
+export interface PackedSource {
+	file: string;
+	published: RegistryVersion;
+	publishedAt: () => Promise<string | null>;
+	registry: string;
+}
+
+export interface EnsureOptions {
+	/** Called with the verified tarball before it is extracted, so a caller can keep a copy (the Action's cache). */
+	onPacked?: (source: PackedSource, digests: Digests) => Promise<void>;
+}
+
 export interface Installer extends ResolveProviders {
 	/** Makes the selected npm runnable: validates a cached entry or downloads, verifies and publishes one (spec SEC-4, SEC-5). */
-	ensure(selection: Selection): Promise<{ entryPath: string; lease: Lease }>;
+	ensure(
+		selection: Selection,
+		options?: EnsureOptions,
+	): Promise<{ entryPath: string; lease: Lease }>;
+	/** Verifies and publishes a tarball obtained elsewhere, such as a restored CI cache (spec SEC-1 to SEC-5). */
+	installTarball(selection: Selection, source: PackedSource): Promise<PublishedEntry>;
+	/** A short stable id of the configured registry, for cache keys that must not mix registries. */
+	registryIdentity(): Promise<string>;
 }
 
 export function createInstaller(context: InstallContext): Installer {
@@ -104,6 +132,64 @@ export function createInstaller(context: InstallContext): Installer {
 		return [...byVersion.values()];
 	}
 
+	async function installTarball(
+		selection: Selection,
+		source: PackedSource,
+		onPacked?: EnsureOptions['onPacked'],
+	): Promise<PublishedEntry> {
+		const { candidate } = selection;
+		const owner = ownerRecord(context.dirs.machine.id);
+		if (
+			source.published.version !== candidate.version ||
+			source.published.integrity !== candidate.integrity
+		) {
+			throw new NpmUseError(
+				'M-INTEGRITY',
+				EXIT.verification,
+				integrityMessage(
+					candidate.integrity,
+					source.published.integrity,
+					`the registry no longer serves npm ${candidate.version} with this integrity`,
+				),
+			);
+		}
+		const digests = await fileDigests(source.file);
+		checkIntegrity(digests, candidate.integrity, selection.hash);
+		const keyid = await verifySignatures({
+			name: 'npm',
+			version: candidate.version,
+			integrity: candidate.integrity,
+			signatures: source.published.signatures,
+			publishedAt: source.publishedAt,
+			keys: context.keys,
+			registry: source.registry,
+			pinned: selection.hash !== null,
+		});
+		if (onPacked !== undefined) {
+			await onPacked(source, digests);
+		}
+		const work = newWorkDir(context.dirs.tmp);
+		try {
+			const extracted = join(work, 'package');
+			mkdirSync(extracted, { mode: 0o700 });
+			await safeExtract(source.file, extracted);
+			checkExtracted(extracted, candidate, context.nodeVersion);
+			writeVerified(extracted, {
+				version: candidate.version,
+				integrity: candidate.integrity,
+				keyid,
+				verifiedAt: new Date().toISOString(),
+			});
+			const canonical = canonicalEntry(context.dirs.cache, candidate.version, candidate.integrity);
+			mkdirSync(join(canonical, '..'), { recursive: true, mode: 0o700 });
+			const published = publishEntry(extracted, canonical, candidate.integrity, owner);
+			touchUsed(published.entryPath);
+			return published;
+		} finally {
+			rmSync(work, { recursive: true, force: true });
+		}
+	}
+
 	return {
 		nodeVersion: context.nodeVersion,
 		ownNpm: () => context.own,
@@ -111,7 +197,12 @@ export function createInstaller(context: InstallContext): Installer {
 		registry: async (specs) => (await registryVersions(specs)).map(toCandidate),
 		entryPathFor: (candidate) =>
 			canonicalEntry(context.dirs.cache, candidate.version, candidate.integrity),
-		async ensure(selection) {
+		async registryIdentity() {
+			const { config } = await factory.get();
+			return createHash('sha256').update(config.registry).digest('hex').slice(0, 12);
+		},
+		installTarball: (selection, source) => installTarball(selection, source),
+		async ensure(selection, options = {}) {
 			const { candidate } = selection;
 			const owner = ownerRecord(context.dirs.machine.id);
 			if (candidate.entryPath !== null && validateEntry(candidate.entryPath, candidate.integrity)) {
@@ -127,49 +218,27 @@ export function createInstaller(context: InstallContext): Installer {
 			const published = (await transport.view(candidate.version)).find(
 				(item) => item.version === candidate.version,
 			);
-			if (published === undefined || published.integrity !== candidate.integrity) {
+			if (published === undefined) {
 				throw new NpmUseError(
 					'M-INTEGRITY',
 					EXIT.verification,
 					integrityMessage(
 						candidate.integrity,
-						published?.integrity ?? 'nothing',
-						`the registry no longer serves npm ${candidate.version} with this integrity`,
+						'nothing',
+						`the registry no longer serves npm ${candidate.version}`,
 					),
 				);
 			}
 			const work = newWorkDir(context.dirs.tmp);
 			try {
 				const packed = await transport.pack(candidate.version, work);
-				const digests = await fileDigests(packed.file);
-				checkIntegrity(digests, candidate.integrity, selection.hash);
-				const keyid = await verifySignatures({
-					name: 'npm',
-					version: candidate.version,
-					integrity: candidate.integrity,
-					signatures: published.signatures,
+				const source: PackedSource = {
+					file: packed.file,
+					published,
 					publishedAt: async () => (await transport.times())[candidate.version] ?? null,
-					keys: context.keys,
 					registry: config.registry,
-					pinned: selection.hash !== null,
-				});
-				const extracted = join(work, 'package');
-				mkdirSync(extracted, { mode: 0o700 });
-				await safeExtract(packed.file, extracted);
-				checkExtracted(extracted, candidate, context.nodeVersion);
-				writeVerified(extracted, {
-					version: candidate.version,
-					integrity: candidate.integrity,
-					keyid,
-					verifiedAt: new Date().toISOString(),
-				});
-				const canonical = canonicalEntry(
-					context.dirs.cache,
-					candidate.version,
-					candidate.integrity,
-				);
-				mkdirSync(join(canonical, '..'), { recursive: true, mode: 0o700 });
-				return publishEntry(extracted, canonical, candidate.integrity, owner);
+				};
+				return await installTarball(selection, source, options.onPacked);
 			} finally {
 				rmSync(work, { recursive: true, force: true });
 			}
