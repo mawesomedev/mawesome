@@ -93,3 +93,25 @@ export function lockedMessage(
 	}
 	return `${path} is locked by ${who}, which is no longer running. Delete ${path} and retry.`;
 }
+
+export function provenanceMessage(name: string, version: string, detail: string): string {
+	return [
+		`${name}@${version} failed provenance verification: ${detail}.`,
+		'The installed version is unchanged. Retry later, or install the release by hand after checking it at https://www.npmjs.com/package/@mawesome/npm-use.',
+	].join('\n');
+}
+
+export function dirPermsMessage(dir: string, problem: string, fix: string): string {
+	return [
+		`${dir} ${problem}.`,
+		`Run \`${fix}\` and retry, or point NPM_USE_HOME at a private directory.`,
+	].join('\n');
+}
+
+export function changedMessage(file: string, what: string): string {
+	return `${file} changed since npm-use wrote it; left untouched. Remove the ${what} by hand if you still want it gone.`;
+}
+
+export function restartMessage(): string {
+	return 'Restart open terminals and IDEs so they pick up the new PATH.';
+}

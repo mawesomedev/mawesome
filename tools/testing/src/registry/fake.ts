@@ -14,9 +14,12 @@ export interface PublishOptions {
 	time?: string;
 	/** Serve a different byte stream than the one the integrity describes. */
 	tamperedTarball?: Buffer;
+	/** Attestations the registry returns for this version; absent means a 404 like an unattested package. */
+	attestations?: unknown[];
 }
 
 interface StoredVersion {
+	name: string;
 	version: string;
 	manifest: Record<string, unknown>;
 	tarball: Buffer;
@@ -46,6 +49,8 @@ export class FakeRegistry {
 	/** Set by the server once it listens; tarball URLs point here. */
 	url = 'http://registry.invalid';
 	readonly #versions = new Map<string, StoredVersion>();
+	readonly #packages = new Map<string, Map<string, StoredVersion>>();
+	readonly #attestations = new Map<string, unknown[]>();
 
 	constructor() {
 		const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -57,6 +62,13 @@ export class FakeRegistry {
 	}
 
 	publish(version: string, options: PublishOptions = {}): StoredVersion {
+		const stored = this.publishPackage('npm', version, options);
+		this.#versions.set(version, stored);
+		return stored;
+	}
+
+	/** Publishes any package; the registry serves its packument, tarballs and attestations like npm's. */
+	publishPackage(name: string, version: string, options: PublishOptions = {}): StoredVersion {
 		const tarball =
 			options.tarball ??
 			buildTarball(
@@ -67,7 +79,7 @@ export class FakeRegistry {
 			);
 		const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`;
 		const shasum = createHash('sha1').update(tarball).digest('hex');
-		const manifest: Record<string, unknown> = { name: 'npm', version };
+		const manifest: Record<string, unknown> = { name, version };
 		if (options.engines !== undefined) {
 			manifest['engines'] = { node: options.engines };
 		}
@@ -77,8 +89,9 @@ export class FakeRegistry {
 				: options.signers === undefined || options.signers === 'own'
 					? [{ keyid: this.keyid, privateKey: this.privateKey }]
 					: options.signers;
-		const payload = Buffer.from(`npm@${version}:${integrity}`, 'utf8');
+		const payload = Buffer.from(`${name}@${version}:${integrity}`, 'utf8');
 		const stored: StoredVersion = {
+			name,
 			version,
 			manifest,
 			tarball,
@@ -91,7 +104,15 @@ export class FakeRegistry {
 			})),
 			time: options.time ?? '2026-01-01T00:00:00.000Z',
 		};
-		this.#versions.set(version, stored);
+		let versions = this.#packages.get(name);
+		if (versions === undefined) {
+			versions = new Map();
+			this.#packages.set(name, versions);
+		}
+		versions.set(version, stored);
+		if (options.attestations !== undefined) {
+			this.#attestations.set(`${name}@${version}`, options.attestations);
+		}
 		return stored;
 	}
 
@@ -103,28 +124,41 @@ export class FakeRegistry {
 		return stored.integrity;
 	}
 
-	packument(): Record<string, unknown> {
+	packument(name = 'npm'): Record<string, unknown> | null {
+		const stored = this.#packages.get(name);
+		if (stored === undefined) {
+			return null;
+		}
 		const versions: Record<string, unknown> = {};
 		const time: Record<string, string> = {
 			created: '2026-01-01T00:00:00.000Z',
 			modified: '2026-01-01T00:00:00.000Z',
 		};
 		let latest = '0.0.0';
-		for (const stored of this.#versions.values()) {
-			versions[stored.version] = {
-				...stored.manifest,
-				_id: `npm@${stored.version}`,
+		const file = name.startsWith('@') ? (name.split('/')[1] as string) : name;
+		for (const entry of stored.values()) {
+			const key = `${name}@${entry.version}`;
+			versions[entry.version] = {
+				...entry.manifest,
+				_id: key,
 				dist: {
-					integrity: stored.integrity,
-					shasum: stored.shasum,
-					tarball: `${this.url}/npm/-/npm-${stored.version}.tgz`,
-					signatures: stored.signatures,
+					integrity: entry.integrity,
+					shasum: entry.shasum,
+					tarball: `${this.url}/${name}/-/${file}-${entry.version}.tgz`,
+					signatures: entry.signatures,
+					...(this.#attestations.has(key)
+						? {
+								attestations: {
+									url: `${this.url}/-/npm/v1/attestations/${encodeURIComponent(name)}@${entry.version}`,
+								},
+							}
+						: {}),
 				},
 			};
-			time[stored.version] = stored.time;
-			latest = stored.version;
+			time[entry.version] = entry.time;
+			latest = entry.version;
 		}
-		return { _id: 'npm', name: 'npm', 'dist-tags': { latest }, versions, time };
+		return { _id: name, name, 'dist-tags': { latest }, versions, time };
 	}
 
 	/** Answers one request the way the registry would; the npm CLI is the client. */
@@ -150,15 +184,25 @@ export class FakeRegistry {
 				],
 			});
 		}
-		if (path === '/npm') {
-			return json(200, this.packument());
+		const attested = /^\/-\/npm\/v1\/attestations\/(.+)$/.exec(path);
+		if (attested !== null) {
+			const list = this.#attestations.get(decodeURIComponent(attested[1] as string));
+			return list === undefined
+				? json(404, { error: 'Not found' })
+				: json(200, { attestations: list });
 		}
-		const tarball = /^\/npm\/-\/npm-(.+)\.tgz$/.exec(path);
+		const tarball = /^\/(@?[^/]+(?:\/[^/]+)?)\/-\/[^/]+-(\d[^/]*)\.tgz$/.exec(path);
 		if (tarball !== null) {
-			const stored = this.#versions.get(tarball[1] as string);
+			const stored = this.#packages
+				.get(decodeURIComponent(tarball[1] as string))
+				?.get(tarball[2] as string);
 			if (stored !== undefined) {
 				return { status: 200, body: stored.served, type: 'application/octet-stream' };
 			}
+		}
+		const packument = this.packument(decodeURIComponent(path.slice(1)));
+		if (packument !== null) {
+			return json(200, packument);
 		}
 		return json(404, { error: 'Not found' });
 	}

@@ -13,7 +13,7 @@ import { newToken, type OwnerRecord } from './lease.ts';
 import { captureMeta, metaMatches, sha256, type Meta } from './meta.ts';
 import { isLive } from './proc.ts';
 
-export type JournalKind = 'launcher' | 'profile' | 'link' | 'home';
+export type JournalKind = 'launcher' | 'profile' | 'link' | 'home' | 'project';
 
 /** A pending change to one file (spec MUT-2): enough to finish it or undo it after a crash. */
 export interface Journal {

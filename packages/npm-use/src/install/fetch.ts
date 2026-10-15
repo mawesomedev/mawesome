@@ -15,6 +15,8 @@ export interface RegistryVersion {
 	integrity: string;
 	tarball: string;
 	signatures: RegistrySignature[];
+	/** `dist.attestations.url`, present for packages published with provenance. */
+	attestationsUrl: string | null;
 }
 
 export interface PackedTarball {
@@ -53,9 +55,17 @@ export class Transport {
 		this.#tmpRoot = tmpRoot;
 	}
 
-	/** Versions matching `range`, newest last as npm lists them; an unmatched range is an empty list. */
-	async view(range: string): Promise<RegistryVersion[]> {
-		const output = await this.#run(['view', `npm@${range}`, 'version', 'engines', 'dist'], true);
+	/** Versions of npm matching `range`, newest last as npm lists them; an unmatched range is an empty list. */
+	view(range: string): Promise<RegistryVersion[]> {
+		return this.viewPackage('npm', range);
+	}
+
+	/** The same for any package, used by self-update for its own package. */
+	async viewPackage(name: string, range: string): Promise<RegistryVersion[]> {
+		const output = await this.#run(
+			['view', `${name}@${range}`, 'version', 'engines', 'dist'],
+			true,
+		);
 		if (output === null) {
 			return [];
 		}
@@ -69,6 +79,7 @@ export class Transport {
 			}
 			const engines = readObject(item, 'engines');
 			const signatures = (dist === null ? null : dist['signatures']) ?? [];
+			const attestations = dist === null ? null : readObject(dist, 'attestations');
 			return [
 				{
 					version,
@@ -76,6 +87,7 @@ export class Transport {
 					integrity,
 					tarball,
 					signatures: Array.isArray(signatures) ? signatures.filter(isSignature) : [],
+					attestationsUrl: attestations === null ? null : readString(attestations, 'url'),
 				},
 			];
 		});
@@ -96,9 +108,16 @@ export class Transport {
 		return times;
 	}
 
-	/** Downloads one version's tarball into `dest` through `npm pack`. */
-	async pack(version: string, dest: string): Promise<PackedTarball> {
-		const output = await this.#run(['pack', `npm@${version}`, `--pack-destination=${dest}`], false);
+	/** Downloads one npm version's tarball into `dest` through `npm pack`. */
+	pack(version: string, dest: string): Promise<PackedTarball> {
+		return this.packPackage('npm', version, dest);
+	}
+
+	async packPackage(name: string, version: string, dest: string): Promise<PackedTarball> {
+		const output = await this.#run(
+			['pack', `${name}@${version}`, `--pack-destination=${dest}`],
+			false,
+		);
 		// npm 8 prints a list; npm 9 and later print an object keyed by package name.
 		const items = asList(output).flatMap((item) =>
 			readString(item, 'filename') === null ? asList(Object.values(item)) : [item],
@@ -107,7 +126,7 @@ export class Transport {
 		const filename = item === null ? null : readString(item, 'filename');
 		const integrity = item === null ? null : readString(item, 'integrity');
 		if (filename === null || integrity === null) {
-			throw this.#failure(`npm pack returned no tarball for npm@${version}`);
+			throw this.#failure(`npm pack returned no tarball for ${name}@${version}`);
 		}
 		return { file: join(dest, filename), integrity };
 	}

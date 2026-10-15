@@ -26,7 +26,7 @@ export async function main(
 	try {
 		if (selector === 'cli') {
 			const { run } = await import('./commands/dispatch.ts');
-			return await run(argv, { home: options.home });
+			return await run(argv, { home: options.home, env: process.env });
 		}
 		return await launch(selector, argv, options.home);
 	} catch (error) {

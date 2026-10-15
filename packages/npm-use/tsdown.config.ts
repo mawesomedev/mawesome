@@ -45,8 +45,12 @@ const config: UserConfig[] = defineConfig([
 		sourcemap: false,
 		clean: false,
 		noExternal: /./,
+		shims: true,
 		define,
-		copy: [{ from: 'src/bootstrap.cjs', to: 'dist/runtime' }],
+		copy: [
+			{ from: 'src/bootstrap.cjs', to: 'dist/runtime' },
+			{ from: 'src/launchers/*.tmpl', to: 'dist/runtime/launchers' },
+		],
 	},
 ]);
 

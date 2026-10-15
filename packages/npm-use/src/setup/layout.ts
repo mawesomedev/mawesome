@@ -1,5 +1,6 @@
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
@@ -13,7 +14,9 @@ import { join } from 'node:path';
 export const BOOTSTRAP_FILE = 'bootstrap.cjs';
 export const RUNTIME_FILE = 'runtime.cjs';
 export const CURRENT_FILE = 'current';
+export const PREVIOUS_FILE = 'previous';
 export const MANIFEST_FILE = 'manifest.json';
+export const VERSIONS_DIR = 'versions';
 
 export interface VersionManifest {
 	version: string;
@@ -21,9 +24,28 @@ export interface VersionManifest {
 	files: string[];
 }
 
-/** Where a runtime build lives: `runtime.cjs`, its chunks and `bootstrap.cjs` side by side. */
-export function runtimeDistDir(): string {
-	return join(import.meta.dirname, 'runtime');
+/**
+ * Where this code's runtime build lives: beside an installed `runtime.cjs`, under `dist/runtime/` for the
+ * bin, or `../../dist/runtime/` when running from source. Null when nothing has been built.
+ */
+export function runtimeDistDir(): string | null {
+	const here = import.meta.dirname;
+	const candidates = [
+		here,
+		join(here, 'runtime'),
+		join(here, '..', 'dist', 'runtime'),
+		join(here, '..', '..', 'dist', 'runtime'),
+	];
+	for (const candidate of candidates) {
+		if (existsSync(join(candidate, RUNTIME_FILE)) && existsSync(join(candidate, BOOTSTRAP_FILE))) {
+			return candidate;
+		}
+	}
+	return null;
+}
+
+export function versionDir(home: string, version: string): string {
+	return join(home, VERSIONS_DIR, version);
 }
 
 function copyTree(from: string, to: string, files: string[], prefix = ''): void {
@@ -50,9 +72,9 @@ export function installVersion(
 	distDir: string,
 	abi: number,
 ): string {
-	const versions = join(home, 'versions');
+	const versions = join(home, VERSIONS_DIR);
 	mkdirSync(versions, { recursive: true, mode: 0o755 });
-	const target = join(versions, version);
+	const target = versionDir(home, version);
 	const staging = join(versions, `.${version}.${process.pid}.${Date.now()}`);
 	rmSync(staging, { recursive: true, force: true });
 	const files: string[] = [];
@@ -79,9 +101,17 @@ export function readCurrent(home: string): string | null {
 	}
 }
 
+export function readPrevious(home: string): string | null {
+	try {
+		return readFileSync(join(home, PREVIOUS_FILE), 'utf8').trim();
+	} catch {
+		return null;
+	}
+}
+
 /** Copies the launcher entry of an installed version to the home root, where the shims point. */
 export function installBootstrap(home: string, version: string): void {
-	const source = join(home, 'versions', version, BOOTSTRAP_FILE);
+	const source = join(versionDir(home, version), BOOTSTRAP_FILE);
 	const temp = join(home, `.${BOOTSTRAP_FILE}.${process.pid}.${Date.now()}`);
 	copyFileSync(source, temp);
 	renameSync(temp, join(home, BOOTSTRAP_FILE));
@@ -90,9 +120,22 @@ export function installBootstrap(home: string, version: string): void {
 export function readManifest(home: string, version: string): VersionManifest | null {
 	try {
 		return JSON.parse(
-			readFileSync(join(home, 'versions', version, MANIFEST_FILE), 'utf8'),
+			readFileSync(join(versionDir(home, version), MANIFEST_FILE), 'utf8'),
 		) as VersionManifest;
 	} catch {
 		return null;
 	}
+}
+
+export function installedVersions(home: string): string[] {
+	try {
+		return readdirSync(join(home, VERSIONS_DIR)).filter((name) => /^\d+\.\d+\.\d+/.test(name));
+	} catch {
+		return [];
+	}
+}
+
+/** The ABI an installed runtime declares, read from its manifest. */
+export function runtimeAbi(home: string, version: string): number | null {
+	return readManifest(home, version)?.abi ?? null;
 }
