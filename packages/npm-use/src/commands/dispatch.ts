@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { EXIT, isNpmUseError } from '../errors.ts';
 import { resolveNpm, type ResolveResult } from '../index.ts';
+import { resolveDirs } from '../setup/home.ts';
+import { isShell, profileBlock, SHELLS } from '../setup/shell.ts';
 
 const VERSION = readSelfVersion();
 
@@ -12,6 +14,8 @@ Usage:
 
 Commands:
   which                  Print the npm that would run for the current directory.
+  init <shell>           Print the shell snippet: zsh, bash, fish or powershell.
+                         --path adds shims/ to PATH, --hook keeps it first; default both.
 
 Global options:
   --json                 Machine-readable output where a command offers it.
@@ -51,6 +55,18 @@ export async function run(argv: string[], options: DispatchOptions): Promise<num
 	}
 	try {
 		switch (command) {
+			case 'init': {
+				const shell = positionals[1];
+				if (shell === undefined || !isShell(shell)) {
+					console.error(`init needs one of: ${SHELLS.join(', ')}`);
+					return EXIT.usage;
+				}
+				const home = options.home ?? resolveDirs(process.env).home;
+				const both = values.path !== true && values.hook !== true;
+				const parts = { path: both || values.path === true, hook: both || values.hook === true };
+				process.stdout.write(profileBlock(shell, home, parts));
+				return EXIT.ok;
+			}
 			case 'which': {
 				const result = await resolveNpm(
 					[],
@@ -76,6 +92,8 @@ function parse(argv: string[]) {
 		allowPositionals: true,
 		options: {
 			json: { type: 'boolean' },
+			path: { type: 'boolean' },
+			hook: { type: 'boolean' },
 			version: { type: 'boolean', short: 'v' },
 			help: { type: 'boolean', short: 'h' },
 		},
