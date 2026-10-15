@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { EXIT, NpmUseError } from './errors.ts';
 import { engineMessage, noMatchMessage } from './messages.ts';
-import { findOwnNpm, type OwnNpm } from './own-npm.ts';
+import type { OwnNpm } from './own-npm.ts';
+import { createContext, createInstaller } from './install/index.ts';
 import { findProject } from './project.ts';
 import { selectCandidate, ownNpmSatisfies, type Candidate, type Selection } from './select.ts';
 import {
@@ -51,21 +52,14 @@ export interface ResolveProviders {
 	entryPathFor(candidate: Candidate): string;
 }
 
-const offlineProviders: ResolveProviders = {
-	ownNpm: () => findOwnNpm(),
-	cached: async () => [],
-	registry: async () => [],
-	nodeVersion: process.version,
-	entryPathFor: () => '',
-};
-
-/** Resolves the npm to run for `argv` in `cwd` (spec section 5); never writes, never spawns npm. */
+/** Resolves the npm to run for `argv` in `cwd` (spec section 5); writes only under the cache, spawns npm only as the transport. */
 export function resolveNpm(
 	argv: readonly string[],
 	cwd: string,
 	options: ResolveOptions = {},
 ): Promise<ResolveResult> {
-	return resolveNpmWith(argv, cwd, options, offlineProviders);
+	const env = options.env ?? process.env;
+	return resolveNpmWith(argv, cwd, options, createInstaller(createContext(env)));
 }
 
 export async function resolveNpmWith(
@@ -133,7 +127,18 @@ export async function resolveNpmWith(
 	const cached = await providers.cached(parsed.specs);
 	let result = selectCandidate(parsed.specs, cached, providers.nodeVersion);
 	if (result.kind === 'failed' && !options.offline && !nonEmpty(env['NPM_USE_OFFLINE'])) {
-		const fromRegistry = await providers.registry(parsed.specs);
+		let fromRegistry: Candidate[];
+		try {
+			fromRegistry = await providers.registry(parsed.specs);
+		} catch (error) {
+			// A download that cannot happen follows the project's policy like a missing version does.
+			if (!(error instanceof NpmUseError) || error.id !== 'M-TRANSPORT') {
+				throw error;
+			}
+			return applyPolicy(parsed.onFail, error, () =>
+				ownResult(project.root, source, error.message),
+			);
+		}
 		result = selectCandidate(parsed.specs, fromRegistry, providers.nodeVersion);
 	}
 	if (result.kind === 'selected') {
@@ -155,13 +160,14 @@ export async function resolveNpmWith(
 			? engineMessage(result.failure.version, result.failure.enginesNode, providers.nodeVersion)
 			: noMatchMessage(parsed.specs, source.file, result.failure.reason);
 	const id = result.failure.kind === 'engine' ? 'M-ENGINE' : 'M-NOMATCH';
-	return applyPolicy(parsed.onFail, id, message, () => ownResult(project.root, source, message));
+	const failure = new NpmUseError(id, EXIT.resolution, message);
+	return applyPolicy(parsed.onFail, failure, () => ownResult(project.root, source, message));
 }
 
+/** `onFail` makes a failed resolution fatal, a warning before Node's own npm, or silent (spec RES-7). */
 function applyPolicy(
 	onFail: OnFail,
-	id: string,
-	message: string,
+	failure: NpmUseError,
 	fallback: () => ResolveResult,
 ): ResolveResult {
 	if (onFail === 'ignore') {
@@ -170,7 +176,7 @@ function applyPolicy(
 	if (onFail === 'warn') {
 		return fallback();
 	}
-	throw new NpmUseError(id, EXIT.resolution, message);
+	throw failure;
 }
 
 /** Reads and validates the project's specs; a broken file or range follows its own `onFail` when readable, else errors. */

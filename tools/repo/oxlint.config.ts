@@ -13,5 +13,10 @@ export default defineConfig({
 			files: ['**/packages/pr-baseline/**', '**/actions/pr-baseline/**'],
 			rules: { 'no-await-in-loop': 'off' },
 		},
+		{
+			// npm-use drives one transport npm and one registry; its awaits in loops are ordered on purpose.
+			files: ['**/packages/npm-use/**'],
+			rules: { 'no-await-in-loop': 'off' },
+		},
 	],
 });

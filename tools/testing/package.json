@@ -12,6 +12,18 @@
 		"./github/server": {
 			"types": "./src/github/server.ts",
 			"default": "./src/github/server.ts"
+		},
+		"./registry": {
+			"types": "./src/registry/fake.ts",
+			"default": "./src/registry/fake.ts"
+		},
+		"./registry/server": {
+			"types": "./src/registry/server.ts",
+			"default": "./src/registry/server.ts"
+		},
+		"./registry/tar": {
+			"types": "./src/registry/tar.ts",
+			"default": "./src/registry/tar.ts"
 		}
 	},
 	"scripts": {

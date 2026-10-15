@@ -1,6 +1,11 @@
 import semver from 'semver';
 import { matchesRange, type NpmSpec, type SpecHash } from './spec.ts';
 
+export interface RegistrySignature {
+	keyid: string;
+	sig: string;
+}
+
 /** A published npm version as the registry or the cache describes it. */
 export interface Candidate {
 	version: string;
@@ -10,6 +15,8 @@ export interface Candidate {
 	integrity: string;
 	/** Where the candidate lives when it is already cached. */
 	entryPath: string | null;
+	/** `dist.signatures` from the registry; null for a cached candidate. */
+	signatures: RegistrySignature[] | null;
 }
 
 export interface Selection {

@@ -10,7 +10,7 @@ function candidate(
 	enginesNode: string | null,
 	entryPath: string | null = null,
 ): Candidate {
-	return { version, enginesNode, integrity, entryPath };
+	return { version, enginesNode, integrity, entryPath, signatures: null };
 }
 
 describe('ownNpmSatisfies', () => {
