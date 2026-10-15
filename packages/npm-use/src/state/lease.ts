@@ -1,14 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import {
-	closeSync,
-	mkdirSync,
-	openSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-	writeSync,
-} from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { isLive, ownIdentity, type ProcessIdentity } from './proc.ts';
@@ -136,19 +127,15 @@ function gateExists(gate: string): boolean {
 
 /** Creates the prune gate with O_EXCL; false when another gate exists (there is only ever one prune, so a leftover). */
 export function createGate(entry: string, owner: OwnerRecord): boolean {
-	let fd: number;
 	try {
-		fd = openSync(gatePath(entry), 'wx', 0o600);
+		writeFileSync(gatePath(entry), JSON.stringify(owner), { flag: 'wx', mode: 0o600 });
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
 			return false;
 		}
+		// A gate without a readable owner would make every later prune skip the entry.
+		rmSync(gatePath(entry), { force: true });
 		throw error;
-	}
-	try {
-		writeSync(fd, JSON.stringify(owner));
-	} finally {
-		closeSync(fd);
 	}
 	return true;
 }

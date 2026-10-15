@@ -13,6 +13,7 @@ import {
 	readManifest,
 	runtimeDistDir,
 	setCurrent,
+	sweepReplaced,
 	versionDir,
 } from '../setup/layout.ts';
 import {
@@ -228,6 +229,7 @@ function installRuntime(context: CommandContext, distDir: string): void {
 	if (!sameFiles(dirs.home, version, distDir)) {
 		installVersion(dirs.home, version, distDir, SHIM_ABI);
 	}
+	sweepReplaced(dirs.home);
 	if (readCurrent(dirs.home) !== version) {
 		mutateFile(
 			dirs.journal,

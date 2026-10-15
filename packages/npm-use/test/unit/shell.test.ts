@@ -52,6 +52,7 @@ describe('snippets', () => {
 		expect(pathSnippet('powershell', 'C:\\npm-use')).toContain("'C:\\npm-use\\shims'");
 		expect(hookSnippet('powershell', 'C:\\npm-use')).toContain('$global:LASTEXITCODE = $exit');
 		expect(hookSnippet('powershell', 'C:\\npm-use')).toContain('_npm_use_original_prompt');
+		expect(hookSnippet('powershell', 'C:\\npm-use')).toContain('if (-not $ok) { Write-Error');
 	});
 
 	it('refuse an unsafe home', () => {

@@ -144,7 +144,7 @@ function runOwnNpm(selector, args) {
 				process.versions.node +
 				' is below ' +
 				FLOOR_TEXT +
-				"; running Node's own npm and ignoring the project's npm requirement. Upgrade Node to honour it.\n",
+				"; running Node's own npm and ignoring the project's npm requirement. Upgrade Node to honour it.\n"
 		);
 	}
 	var cli = selector === 'npx' ? 'npx-cli.js' : 'npm-cli.js';
@@ -164,7 +164,32 @@ function runtimePath(candidate) {
 	if (!VERSION_RE.test(current)) {
 		return null;
 	}
-	return path.join(home, 'versions', current, 'runtime.cjs');
+	var installed = path.join(home, 'versions', current, 'runtime.cjs');
+	if (fs.existsSync(installed)) {
+		return installed;
+	}
+	return replacedRuntime(current);
+}
+
+/** A reinstall of the current version moves the old copy aside for an instant; a crash there leaves it usable. */
+function replacedRuntime(version) {
+	var versions = path.join(home, 'versions');
+	var names;
+	try {
+		names = fs.readdirSync(versions);
+	} catch (error) {
+		return null;
+	}
+	var prefix = '.' + version + '.replaced.';
+	for (var i = 0; i < names.length; i += 1) {
+		if (
+			names[i].indexOf(prefix) === 0 &&
+			fs.existsSync(path.join(versions, names[i], 'runtime.cjs'))
+		) {
+			return path.join(versions, names[i], 'runtime.cjs');
+		}
+	}
+	return null;
 }
 
 function main() {
@@ -188,7 +213,7 @@ function main() {
 					process.versions.node +
 					'. ' +
 					setupHint(),
-				64,
+				64
 			);
 			return;
 		}
@@ -202,7 +227,7 @@ function main() {
 				home +
 				' is missing or malformed. ' +
 				setupHint(),
-			6,
+			6
 		);
 		return;
 	}
@@ -212,7 +237,7 @@ function main() {
 	} catch (error) {
 		fail(
 			'launcher mismatch: cannot load ' + script + ' (' + error.message + '). ' + setupHint(),
-			6,
+			6
 		);
 		return;
 	}
@@ -228,7 +253,7 @@ function main() {
 				LAUNCHER_ABI +
 				'. ' +
 				setupHint(),
-			6,
+			6
 		);
 		return;
 	}
@@ -240,7 +265,7 @@ function main() {
 		function (error) {
 			fail(error && error.stack ? error.stack : String(error), 1);
 			return 1;
-		},
+		}
 	);
 }
 

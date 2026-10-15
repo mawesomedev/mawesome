@@ -6,4 +6,11 @@ export default defineConfig({
 	singleQuote: true,
 	semicolons: true,
 	trailingComma: 'all',
+	overrides: [
+		{
+			// The launcher is ES5 (runs on Node 10), where a trailing comma in a call is a syntax error.
+			files: ['**/packages/npm-use/src/bootstrap.cjs'],
+			options: { trailingComma: 'none' },
+		},
+	],
 });

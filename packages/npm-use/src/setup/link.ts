@@ -312,7 +312,12 @@ function moveAside(
 	if (existsSync(originalPath) && !metaMatches(originalPath, current)) {
 		return { target: path, outcome: 'foreign', detail: `${originalPath} already exists` };
 	}
-	const entry: LinkRecord = {
+	try {
+		withSharingRetry(() => renameSync(path, originalPath));
+	} catch (error) {
+		return { target: path, outcome: 'unwritable', detail: (error as Error).message };
+	}
+	record(dirs, {
 		binDir,
 		name,
 		target: path,
@@ -320,13 +325,7 @@ function moveAside(
 		original: current,
 		shim: MISSING,
 		linkedAt: new Date().toISOString(),
-	};
-	record(dirs, entry);
-	try {
-		withSharingRetry(() => renameSync(path, originalPath));
-	} catch (error) {
-		return { target: path, outcome: 'unwritable', detail: (error as Error).message };
-	}
+	});
 	void owner;
 	return { target: path, outcome: 'linked' };
 }
@@ -338,15 +337,22 @@ export function unlinkOne(dirs: Dirs, owner: OwnerRecord, entry: LinkRecord): Un
 	const current = captureMeta(entry.target);
 	const hasOriginal = entry.originalPath !== null && existsSync(entry.originalPath);
 	if (current.type === 'missing') {
-		if (hasOriginal) {
+		if (hasOriginal && metaMatches(entry.originalPath as string, entry.original)) {
 			restoreOriginal(dirs, owner, entry);
 			forget(dirs, entry);
 			return 'restored';
 		}
+		if (hasOriginal) {
+			return 'changed';
+		}
 		forget(dirs, entry);
 		return 'missing';
 	}
-	if (entry.shim.type !== 'missing' && !metaMatches(entry.target, entry.shim)) {
+	if (entry.shim.type === 'missing') {
+		// The file was only moved aside; something else put a file back, which is not ours to replace.
+		return 'changed';
+	}
+	if (!metaMatches(entry.target, entry.shim)) {
 		return 'changed';
 	}
 	if (hasOriginal) {

@@ -44,11 +44,21 @@ export function attestationUrl(
 	registry: string,
 ): URL {
 	const base = new URL(registry);
+	const url = new URL(base);
 	if (input.attestationsUrl !== null) {
+		// Assigned, not re-parsed: a pathname starting with `//host` would otherwise become another origin.
 		const given = new URL(input.attestationsUrl, base);
-		return new URL(`${given.pathname}${given.search}`, base);
+		url.pathname = given.pathname;
+		url.search = given.search;
+	} else {
+		url.pathname = `${base.pathname.replace(/\/$/, '')}/-/npm/v1/attestations/${encodeURIComponent(input.name)}@${input.version}`;
+		url.search = '';
 	}
-	return new URL(`-/npm/v1/attestations/${encodeURIComponent(input.name)}@${input.version}`, base);
+	url.hash = '';
+	if (url.origin !== base.origin || url.username !== '' || url.password !== '') {
+		throw new Error(`attestation URL ${url.href} leaves the registry origin ${base.origin}`);
+	}
+	return url;
 }
 
 /** TLS settings npm itself would use: `ca` and `cafile`, `strict-ssl`, and the registry's client certificate (spec DL-2). */
@@ -141,14 +151,40 @@ interface Statement {
 	predicateType: string;
 }
 
+function isSubject(value: unknown): value is Statement['subject'][number] {
+	if (typeof value !== 'object' || value === null) {
+		return false;
+	}
+	const { name, digest } = value as { name?: unknown; digest?: unknown };
+	return (
+		typeof name === 'string' &&
+		typeof digest === 'object' &&
+		digest !== null &&
+		!Array.isArray(digest)
+	);
+}
+
 function statementOf(bundle: unknown): Statement | null {
 	const payload = (bundle as { dsseEnvelope?: { payload?: unknown } }).dsseEnvelope?.payload;
 	if (typeof payload !== 'string') {
 		return null;
 	}
 	try {
-		const parsed = JSON.parse(Buffer.from(payload, 'base64').toString('utf8')) as Statement;
-		return Array.isArray(parsed.subject) ? parsed : null;
+		const parsed = JSON.parse(
+			Buffer.from(payload, 'base64').toString('utf8'),
+		) as Partial<Statement>;
+		if (typeof parsed !== 'object' || parsed === null || !Array.isArray(parsed.subject)) {
+			return null;
+		}
+		return {
+			predicateType: typeof parsed.predicateType === 'string' ? parsed.predicateType : '',
+			subject: parsed.subject.filter(isSubject).map((subject) => ({
+				name: subject.name,
+				digest: Object.fromEntries(
+					Object.entries(subject.digest).filter(([, value]) => typeof value === 'string'),
+				) as Record<string, string>,
+			})),
+		};
 	} catch {
 		return null;
 	}

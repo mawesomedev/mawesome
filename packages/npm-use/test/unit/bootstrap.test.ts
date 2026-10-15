@@ -27,6 +27,7 @@ describe('bootstrap.cjs', () => {
 			/\?\./,
 			/\?\?/,
 			/\bimport\b/,
+			/,\s*[)\]}]/,
 		]) {
 			expect(code, forbidden.source).not.toMatch(forbidden);
 		}

@@ -36,6 +36,10 @@ Node is always `process.execPath`. Every other helper (`ps`, `ioreg`, `reg.exe`,
 
 Every command that writes outside the cache takes an exclusive lock created with `O_EXCL`. Nothing reclaims a lock: a crashed owner leaves it, the next command says which file to delete and whether the owner still runs, and a lock from another machine is never judged from here. Every file change goes through a journal with a backup and a staged copy, so an interrupted change is finished or undone by the next command, and a file someone else changed in the meantime is left alone and reported. Cache entries use leases and a prune gate so a running npm keeps its entry and a prune never races a launch.
 
+## Windows file ACLs
+
+Edits go through a temp file renamed into place, so an edited profile or `package.json` takes its directory's ACL rather than keeping a custom one set on the file itself. POSIX modes are preserved.
+
 ## Directories
 
 The home, state and cache directories are created with mode `0700`. On POSIX, a home or cache owned by someone else or writable by other users is refused. Secrets are never printed: messages show proxy and registry URLs with their user info replaced.

@@ -136,7 +136,10 @@ export function profileGuard(
 	if (stat !== null && stat.isSymbolicLink()) {
 		return 'it is a symlink, so a dotfile manager probably owns it';
 	}
-	const probe = stat === null ? dirname(file) : file;
+	let probe = stat === null ? dirname(file) : file;
+	while (!existsSync(probe) && dirname(probe) !== probe) {
+		probe = dirname(probe);
+	}
 	try {
 		accessSync(probe, constants.W_OK);
 	} catch {

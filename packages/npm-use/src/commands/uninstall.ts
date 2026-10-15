@@ -65,11 +65,12 @@ export async function uninstall(
 			removeFromUserPath(env, shimDir(dirs.home));
 			clearCmdAutoRun(env);
 		}
+		// Still under the lock, so a concurrent setup cannot start writing into a home being deleted.
+		rmSync(dirs.home, { recursive: true, force: true });
+		report.homeRemoved = true;
 	} finally {
 		lock.release();
 	}
-	rmSync(dirs.home, { recursive: true, force: true });
-	report.homeRemoved = true;
 	if (options.purgeCache) {
 		rmSync(dirs.cache, { recursive: true, force: true });
 		report.cacheRemoved = true;

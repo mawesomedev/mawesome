@@ -148,6 +148,8 @@ export class Transport {
 			'--json',
 			'--ignore-scripts',
 			'--loglevel=error',
+			// A packument's tarball URL never redirects the download to another host (spec SEC-7).
+			'--replace-registry-host=always',
 			'--fetch-retry-mintimeout=1000',
 			'--fetch-retry-maxtimeout=10000',
 			`--prefix=${cwd}`,

@@ -167,5 +167,8 @@ describe.skipIf(process.platform === 'win32')('profileGuard', () => {
 		expect(profileGuard(join(root, '.zshrc'), { HOME: root })).toMatch(/chezmoi/);
 		expect(profileGuard(join(root, 'real'), { HOME: '/nonexistent' })).toBeNull();
 		expect(profileGuard(join(root, 'new-file'), { HOME: '/nonexistent' })).toBeNull();
+		expect(
+			profileGuard(join(root, 'fish', 'conf.d', 'npm-use.fish'), { HOME: '/nonexistent' }),
+		).toBeNull();
 	});
 });

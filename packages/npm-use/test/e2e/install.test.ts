@@ -261,6 +261,20 @@ describe('download, verify and cache', { timeout: 120_000 }, () => {
 		).toBe(false);
 	});
 
+	it('downloads from the configured registry even when the packument advertises another host', async () => {
+		const elsewhere = new FakeRegistry();
+		const server = await serveRegistry(elsewhere);
+		closers.push(server.close);
+		const h = await start({ devEngines: { packageManager: { ...npm, version: '13.0.0' } } });
+		h.registry.publish('13.0.0', { tarballOrigin: server.url });
+		elsewhere.publish('13.0.0', { extra: [{ path: 'package/elsewhere.txt', content: 'x' }] });
+		const result = await h.run();
+		expect(result.stdout).toBe('13.0.0 -v');
+		expect(existsSync(join(result.entryPath, 'elsewhere.txt'))).toBe(false);
+		expect(elsewhere.requests).toHaveLength(0);
+		expect(h.registry.requests.some((request) => request.path.endsWith('.tgz'))).toBe(true);
+	});
+
 	it('sends the user token to the user registry and nowhere else', async () => {
 		const h = await start({ devEngines: { packageManager: { ...npm, version: '13.0.0' } } });
 		h.registry.token = 'tok_123';

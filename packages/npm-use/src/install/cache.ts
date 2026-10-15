@@ -139,16 +139,17 @@ export function publishEntry(
 		renameSync(tempDir, canonical);
 		return { entryPath: canonical, lease };
 	} catch (error) {
-		lease.release();
 		if (!isCollision(error)) {
+			lease.release();
 			throw error;
 		}
 	}
+	// The lease taken above already covers the winner's entry, so a prune cannot take it away meanwhile.
 	if (validateEntry(canonical, integrity)) {
-		const shared = createLease(canonical, owner);
 		rmSync(tempDir, { recursive: true, force: true });
-		return { entryPath: canonical, lease: shared };
+		return { entryPath: canonical, lease };
 	}
+	lease.release();
 	return publishPrivately(tempDir, canonical, owner);
 }
 

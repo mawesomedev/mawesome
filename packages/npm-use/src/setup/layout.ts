@@ -86,7 +86,14 @@ export function installVersion(
 	if (existsSync(target)) {
 		renameSync(target, replaced);
 	}
-	renameSync(staging, target);
+	try {
+		renameSync(staging, target);
+	} catch (error) {
+		if (existsSync(replaced)) {
+			renameSync(replaced, target);
+		}
+		throw error;
+	}
 	rmSync(replaced, { recursive: true, force: true });
 	return target;
 }
@@ -129,6 +136,22 @@ export function readManifest(home: string, version: string): VersionManifest | n
 		) as VersionManifest;
 	} catch {
 		return null;
+	}
+}
+
+/** Removes copies a crashed reinstall moved aside; the launcher only reads them while `versions/<v>` is missing. */
+export function sweepReplaced(home: string): void {
+	let names: string[];
+	try {
+		names = readdirSync(join(home, VERSIONS_DIR));
+	} catch {
+		return;
+	}
+	for (const name of names) {
+		const match = /^\.(.+)\.replaced\./.exec(name);
+		if (match !== null && existsSync(join(home, VERSIONS_DIR, match[1] as string, RUNTIME_FILE))) {
+			rmSync(join(home, VERSIONS_DIR, name), { recursive: true, force: true });
+		}
 	}
 }
 

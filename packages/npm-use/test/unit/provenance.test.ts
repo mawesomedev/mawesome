@@ -50,6 +50,35 @@ const input = {
 };
 
 describe('attestationUrl', () => {
+	it('never follows an advertised path to another origin', () => {
+		for (const evil of [
+			'//evil.example/-/npm/v1/attestations/x',
+			'https://registry.example//evil.example/x',
+			'/x?y=1#frag',
+		]) {
+			const url = attestationUrl({ ...input, attestationsUrl: evil }, config.registry);
+			expect(url.origin).toBe('https://registry.example');
+			expect(url.hash).toBe('');
+		}
+	});
+
+	it('rejects a statement whose subjects are malformed with M-PROVENANCE', async () => {
+		const statement = {
+			subject: [null, { name: 'x' }, { digest: {} }],
+			predicateType: SLSA_PREDICATE,
+		};
+		const bundle = {
+			dsseEnvelope: { payload: Buffer.from(JSON.stringify(statement)).toString('base64') },
+		};
+		await expect(
+			verifyProvenance(input, {
+				fetch: async () => [{ predicateType: SLSA_PREDICATE, bundle }],
+				verify,
+				env: {},
+			}),
+		).rejects.toMatchObject({ id: 'M-PROVENANCE' });
+	});
+
 	it('keeps only the path of the advertised URL and resolves it against the registry', () => {
 		const url = attestationUrl(
 			{

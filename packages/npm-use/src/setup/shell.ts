@@ -127,6 +127,7 @@ export function hookSnippet(shell: Shell, home: string): string {
 				'        $out = & $function:global:_npm_use_original_prompt',
 				'        $global:LASTEXITCODE = $exit',
 				'        $out',
+				"        if (-not $ok) { Write-Error 'npm-use: preserving $?' -ErrorAction SilentlyContinue }",
 				'    }',
 				'}',
 				'',

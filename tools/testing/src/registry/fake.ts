@@ -14,6 +14,8 @@ export interface PublishOptions {
 	time?: string;
 	/** Serve a different byte stream than the one the integrity describes. */
 	tamperedTarball?: Buffer;
+	/** Advertise the tarball on another origin, as a compromised registry could. */
+	tarballOrigin?: string;
 	/** Attestations the registry returns for this version; absent means a 404 like an unattested package. */
 	attestations?: unknown[];
 }
@@ -28,6 +30,7 @@ interface StoredVersion {
 	shasum: string;
 	signatures: Array<{ keyid: string; sig: string }>;
 	time: string;
+	tarballOrigin: string | null;
 }
 
 export interface RecordedRequest {
@@ -96,6 +99,7 @@ export class FakeRegistry {
 			manifest,
 			tarball,
 			served: options.tamperedTarball ?? tarball,
+			tarballOrigin: options.tarballOrigin ?? null,
 			integrity,
 			shasum,
 			signatures: signers.map((signer) => ({
@@ -144,7 +148,7 @@ export class FakeRegistry {
 				dist: {
 					integrity: entry.integrity,
 					shasum: entry.shasum,
-					tarball: `${this.url}/${name}/-/${file}-${entry.version}.tgz`,
+					tarball: `${entry.tarballOrigin ?? this.url}/${name}/-/${file}-${entry.version}.tgz`,
 					signatures: entry.signatures,
 					...(this.#attestations.has(key)
 						? {

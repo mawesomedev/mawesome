@@ -1,4 +1,4 @@
-import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { EXIT, NpmUseError } from '../errors.ts';
 import { lockedMessage } from '../messages.ts';
@@ -53,25 +53,13 @@ export function lockOwnerLive(record: LockRecord | null, machineId: string): boo
 }
 
 function tryCreate(path: string, record: LockRecord): boolean {
-	let fd: number;
 	try {
-		fd = openSync(path, 'wx', 0o600);
+		writeFileSync(path, JSON.stringify(record), { flag: 'wx', mode: 0o600 });
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
 			return false;
 		}
-		throw error;
-	}
-	try {
-		writeSync(fd, JSON.stringify(record));
-		closeSync(fd);
-	} catch (error) {
 		// A half-written lock would block everyone with no owner to release it.
-		try {
-			closeSync(fd);
-		} catch {
-			// Already closed.
-		}
 		rmSync(path, { force: true });
 		throw error;
 	}
