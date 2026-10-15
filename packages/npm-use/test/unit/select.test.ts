@@ -10,7 +10,7 @@ function candidate(
 	enginesNode: string | null,
 	entryPath: string | null = null,
 ): Candidate {
-	return { version, enginesNode, integrity, entryPath, signatures: null };
+	return { version, enginesNode, integrity, entryPath, signatures: null, keyid: 'SHA256:test' };
 }
 
 describe('ownNpmSatisfies', () => {
@@ -38,7 +38,7 @@ describe('selectCandidate', () => {
 		);
 		expect(result).toMatchObject({
 			kind: 'selected',
-			selection: { candidate: { version: '12.1.0' }, hash: null },
+			selection: { candidate: { version: '12.1.0' }, hashes: [] },
 		});
 	});
 
@@ -78,7 +78,7 @@ describe('selectCandidate', () => {
 		const pinned = parseVersionSpec(`12.1.0+sha512.${hex}`, 'f');
 		expect(selectCandidate([pinned], [candidate('12.1.0', null)], node)).toMatchObject({
 			kind: 'selected',
-			selection: { hash: { algorithm: 'sha512' } },
+			selection: { hashes: [{ algorithm: 'sha512' }] },
 		});
 		const other = {
 			...candidate('12.1.0', null),
@@ -94,17 +94,55 @@ describe('selectCandidate', () => {
 		const pinned = parseVersionSpec(`12.1.0+sha256.${'e'.repeat(64)}`, 'f');
 		const open = parseVersionSpec('^12', 'f');
 		expect(selectCandidate([pinned, open], [candidate('12.1.0', null)], node)).toMatchObject({
-			selection: { hash: null },
+			selection: { hashes: [] },
 		});
 		expect(selectCandidate([open, pinned], [candidate('12.1.0', null)], node)).toMatchObject({
-			selection: { hash: null },
+			selection: { hashes: [] },
+		});
+	});
+
+	it('never offers a cached entry that only a pin vouched for to an unpinned project', () => {
+		const pinnedOnly = {
+			...candidate('12.1.0', null, '/cache/12.1.0'),
+			keyid: null,
+			digests: { sha256: 'e'.repeat(64), sha224: 'd'.repeat(56) },
+		};
+		expect(selectCandidate([parseVersionSpec('^12', 'f')], [pinnedOnly], node)).toMatchObject({
+			kind: 'failed',
+		});
+		expect(
+			selectCandidate(
+				[parseVersionSpec(`12.1.0+sha256.${'e'.repeat(64)}`, 'f')],
+				[pinnedOnly],
+				node,
+			),
+		).toMatchObject({ kind: 'selected' });
+		expect(
+			selectCandidate(
+				[parseVersionSpec(`12.1.0+sha256.${'f'.repeat(64)}`, 'f')],
+				[pinnedOnly],
+				node,
+			),
+		).toMatchObject({ kind: 'failed' });
+		const signed = { ...pinnedOnly, keyid: 'SHA256:k' };
+		expect(selectCandidate([parseVersionSpec('^12', 'f')], [signed], node)).toMatchObject({
+			kind: 'selected',
+			selection: { hashes: [] },
+		});
+	});
+
+	it('carries every matching pin so any one of them may verify the download', () => {
+		const a = parseVersionSpec(`12.1.0+sha256.${'a'.repeat(64)}`, 'f');
+		const b = parseVersionSpec(`12.1.0+sha224.${'b'.repeat(56)}`, 'f');
+		expect(selectCandidate([a, b], [candidate('12.1.0', null)], node)).toMatchObject({
+			selection: { hashes: [a.hash, b.hash] },
 		});
 	});
 
 	it('carries a sha256 pin to the verifier instead of deciding here', () => {
 		const pinned = parseVersionSpec(`12.1.0+sha256.${'e'.repeat(64)}`, 'f');
 		expect(selectCandidate([pinned], [candidate('12.1.0', null)], node)).toMatchObject({
-			selection: { hash: { algorithm: 'sha256' } },
+			selection: { hashes: [{ algorithm: 'sha256' }] },
 		});
 	});
 

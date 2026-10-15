@@ -64,7 +64,13 @@ export function createLease(entry: string, owner: OwnerRecord): Lease {
 	const dir = leasesDir(entry);
 	mkdirSync(dir, { recursive: true, mode: 0o700 });
 	const path = join(dir, newToken());
-	writeFileSync(path, JSON.stringify(owner), { mode: 0o600, flag: 'wx' });
+	try {
+		writeFileSync(path, JSON.stringify(owner), { mode: 0o600, flag: 'wx' });
+	} catch (error) {
+		// An unreadable lease counts as live and would keep the entry forever.
+		rmSync(path, { force: true });
+		throw error;
+	}
 	return {
 		path,
 		release() {

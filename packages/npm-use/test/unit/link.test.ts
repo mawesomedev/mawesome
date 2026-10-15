@@ -17,6 +17,7 @@ import {
 	linkTargets,
 	readLinks,
 	unlinkOne,
+	writeLinks,
 } from '../../src/setup/link.ts';
 import { ownerRecord } from '../../src/state/lease.ts';
 import { makeTree, removeTrees } from '../helpers/tree.ts';
@@ -171,6 +172,18 @@ describe('link and unlink', () => {
 		);
 		expect(linkOne(dirs, owner, join(root, 'bin'), ps1).outcome).toBe('already');
 		const entry = readLinks(dirs).entries.find((item) => item.name === 'npm.ps1')!;
+		expect(linkState(entry)).toBe('intact');
+		// A crash between the rename and the record: the aside file is adopted on the next run.
+		writeLinks(dirs, {
+			version: 1,
+			entries: readLinks(dirs).entries.filter((item) => item.name !== 'npm.ps1'),
+		});
+		expect(linkOne(dirs, owner, join(root, 'bin'), ps1).outcome).toBe('already');
+		expect(readLinks(dirs).entries.some((item) => item.name === 'npm.ps1')).toBe(true);
+		writeFileSync(join(root, 'bin', 'npm.ps1'), 'someone put a file back');
+		expect(linkState(entry)).toBe('changed');
+		expect(unlinkOne(dirs, owner, entry)).toBe('changed');
+		rmSync(join(root, 'bin', 'npm.ps1'));
 		expect(unlinkOne(dirs, owner, entry)).toBe('restored');
 		expect(readFileSync(join(root, 'bin', 'npm.ps1'), 'utf8')).toBe('original ps1');
 	});

@@ -5,6 +5,7 @@ import {
 	PROVENANCE_IDENTITY,
 	SLSA_PREDICATE,
 	verifyProvenance,
+	identityPattern,
 	tlsOptions,
 } from '../../src/install/provenance.ts';
 import { join } from 'node:path';
@@ -50,6 +51,27 @@ const input = {
 };
 
 describe('attestationUrl', () => {
+	it('anchors and escapes the identity sigstore matches as a regular expression', () => {
+		const pattern = new RegExp(identityPattern());
+		expect(pattern.test(PROVENANCE_IDENTITY)).toBe(true);
+		expect(pattern.test(`${PROVENANCE_IDENTITY}-malicious`)).toBe(false);
+		expect(
+			pattern.test(
+				`https://github.com/mawesomedev/mawesome/.github/workflows/releaseXyml@refs/heads/main`,
+			),
+		).toBe(false);
+		expect(pattern.test(`x${PROVENANCE_IDENTITY}`)).toBe(false);
+	});
+
+	it('turns a malformed advertised URL into M-PROVENANCE', async () => {
+		await expect(
+			verifyProvenance(
+				{ ...input, attestationsUrl: 'http://[' },
+				{ fetch: async () => [], verify, env: {} },
+			),
+		).rejects.toMatchObject({ id: 'M-PROVENANCE' });
+	});
+
 	it('never follows an advertised path to another origin', () => {
 		for (const evil of [
 			'//evil.example/-/npm/v1/attestations/x',

@@ -25,7 +25,14 @@ function entryDir(root: string, version: string, engines?: string): string {
 		join(dir, 'package.json'),
 		JSON.stringify({ name: 'npm', version, ...(engines ? { engines: { node: engines } } : {}) }),
 	);
-	writeVerified(dir, { version, integrity, keyid: null, verifiedAt: 'now' });
+	writeVerified(dir, {
+		version,
+		integrity,
+		keyid: null,
+		sha256: 'x',
+		sha224: 'y',
+		verifiedAt: 'now',
+	});
 	return dir;
 }
 
@@ -70,6 +77,8 @@ describe('publishEntry', () => {
 			version: '12.0.0',
 			integrity,
 			keyid: null,
+			sha256: 'x',
+			sha224: 'y',
 			verifiedAt: 'now',
 		});
 		const canonical = canonicalEntry(root, '12.0.0', integrity);

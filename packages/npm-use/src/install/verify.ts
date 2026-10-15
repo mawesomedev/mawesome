@@ -58,8 +58,12 @@ function integrityFailure(expected: string, actual: string, detail: string): Npm
 	);
 }
 
-/** The tarball must match the registry's integrity and, when the spec pins one, its hash too (spec SEC-2). */
-export function checkIntegrity(digests: Digests, integrity: string, hash: SpecHash | null): void {
+/** The tarball must match the registry's integrity and, when the project pins hashes, one of them (spec SEC-2). */
+export function checkIntegrity(
+	digests: Digests,
+	integrity: string,
+	hashes: readonly SpecHash[],
+): void {
 	if (digests.sha512 !== integrity.trim()) {
 		throw integrityFailure(
 			integrity,
@@ -67,18 +71,19 @@ export function checkIntegrity(digests: Digests, integrity: string, hash: SpecHa
 			'the tarball does not match the registry integrity',
 		);
 	}
-	if (hash === null) {
+	if (hashes.length === 0) {
 		return;
 	}
 	const actual = {
 		sha512: digests.sha512hex,
 		sha256: digests.sha256hex,
 		sha224: digests.sha224hex,
-	}[hash.algorithm];
-	if (actual !== hash.hex) {
+	};
+	if (!hashes.some((hash) => actual[hash.algorithm] === hash.hex)) {
+		const [first] = hashes as [SpecHash, ...SpecHash[]];
 		throw integrityFailure(
-			`${hash.algorithm}.${hash.hex}`,
-			`${hash.algorithm}.${actual}`,
+			`${first.algorithm}.${first.hex}`,
+			`${first.algorithm}.${actual[first.algorithm]}`,
 			'the tarball does not match the pinned hash',
 		);
 	}
@@ -271,7 +276,11 @@ export async function safeExtract(
 export interface Verified {
 	version: string;
 	integrity: string;
+	/** The registry key that verified the tarball, or null when only a project's pin did. */
 	keyid: string | null;
+	/** Tarball digests, so a later pin of another algorithm can be judged against the entry. */
+	sha256: string;
+	sha224: string;
 	verifiedAt: string;
 }
 
@@ -287,10 +296,15 @@ export function readVerified(dir: string): Verified | null {
 		if (typeof parsed.version !== 'string' || typeof parsed.integrity !== 'string') {
 			return null;
 		}
+		if (typeof parsed.sha256 !== 'string' || typeof parsed.sha224 !== 'string') {
+			return null;
+		}
 		return {
 			version: parsed.version,
 			integrity: parsed.integrity,
 			keyid: typeof parsed.keyid === 'string' ? parsed.keyid : null,
+			sha256: parsed.sha256,
+			sha224: parsed.sha224,
 			verifiedAt: typeof parsed.verifiedAt === 'string' ? parsed.verifiedAt : '',
 		};
 	} catch {

@@ -102,6 +102,24 @@ describe('download, verify and cache', { timeout: 120_000 }, () => {
 		await expect(wrongPin.resolve()).rejects.toMatchObject({ id: 'M-NOMATCH' });
 	});
 
+	it('keeps an entry verified only by a pin away from projects without that pin', async () => {
+		const h = await start({});
+		const stored = h.registry.publish('13.0.0', { signers: 'none' });
+		const hex = Buffer.from(stored.integrity.slice('sha512-'.length), 'base64').toString('hex');
+		writeFileSync(
+			join(h.project, 'package.json'),
+			JSON.stringify({ packageManager: `npm@13.0.0+sha512.${hex}` }),
+		);
+		expect((await h.run()).stdout).toBe('13.0.0 -v');
+		writeFileSync(
+			join(h.project, 'package.json'),
+			JSON.stringify({ devEngines: { packageManager: { ...npm, version: '13.0.0' } } }),
+		);
+		// The cached entry is not an alternative, so resolution goes to the registry and the download is refused.
+		expect((await h.resolve()).kind).toBe('download');
+		await expect(h.run()).rejects.toMatchObject({ id: 'M-UNSIGNED' });
+	});
+
 	it('rejects a signature by an unknown key and a key the keyring revoked', async () => {
 		const h = await start({ devEngines: { packageManager: { ...npm, version: '13.0.0' } } });
 		const stranger = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });

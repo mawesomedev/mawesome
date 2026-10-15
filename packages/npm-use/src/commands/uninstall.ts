@@ -1,4 +1,5 @@
 import { rmSync } from 'node:fs';
+import { atomicRename, removeWithRetry } from '../state/atomic.ts';
 import { EXIT } from '../errors.ts';
 import { changedMessage } from '../messages.ts';
 import { recoverDeadJournals } from '../state/journal.ts';
@@ -65,8 +66,10 @@ export async function uninstall(
 			removeFromUserPath(env, shimDir(dirs.home));
 			clearCmdAutoRun(env);
 		}
-		// Still under the lock, so a concurrent setup cannot start writing into a home being deleted.
-		rmSync(dirs.home, { recursive: true, force: true });
+		// Under the lock the home moves aside in one rename, so a setup that follows never writes into a dir being deleted.
+		const tombstone = `${dirs.home}.removing.${process.pid}.${Date.now()}`;
+		atomicRename(dirs.home, tombstone);
+		removeWithRetry(tombstone);
 		report.homeRemoved = true;
 	} finally {
 		lock.release();

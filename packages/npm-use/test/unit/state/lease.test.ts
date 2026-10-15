@@ -37,7 +37,14 @@ function entry(root: string, version: string, token?: string): string {
 	const dir = token === undefined ? base : `${base}.${token}`;
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'npm', version }));
-	writeVerified(dir, { version, integrity, keyid: null, verifiedAt: 'now' });
+	writeVerified(dir, {
+		version,
+		integrity,
+		keyid: null,
+		sha256: 'x',
+		sha224: 'y',
+		verifiedAt: 'now',
+	});
 	return dir;
 }
 

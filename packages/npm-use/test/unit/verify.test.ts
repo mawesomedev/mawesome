@@ -164,13 +164,16 @@ describe('integrity', () => {
 		expect(digests.sha256hex).toBe(
 			'2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
 		);
-		expect(() => checkIntegrity(digests, digests.sha512, null)).not.toThrow();
+		expect(() => checkIntegrity(digests, digests.sha512, [])).not.toThrow();
 		expect(() =>
-			checkIntegrity(digests, digests.sha512, { algorithm: 'sha256', hex: digests.sha256hex }),
+			checkIntegrity(digests, digests.sha512, [{ algorithm: 'sha256', hex: digests.sha256hex }]),
 		).not.toThrow();
-		expect(() => checkIntegrity(digests, 'sha512-AAAA', null)).toThrow(NpmUseError);
+		expect(() => checkIntegrity(digests, 'sha512-AAAA', [])).toThrow(NpmUseError);
 		expect(() =>
-			checkIntegrity(digests, digests.sha512, { algorithm: 'sha224', hex: 'f'.repeat(56) }),
+			checkIntegrity(digests, digests.sha512, [
+				{ algorithm: 'sha224', hex: 'f'.repeat(56) },
+				{ algorithm: 'sha256', hex: 'f'.repeat(64) },
+			]),
 		).toThrow(/pinned hash/);
 	});
 });
@@ -291,14 +294,23 @@ describe('.verified', () => {
 			version: '1.0.0',
 			integrity: 'sha512-x',
 			keyid: null,
+			sha256: 'x',
+			sha224: 'y',
 			verifiedAt: 'now',
 		});
 		expect(readVerified(root)).toEqual({
 			version: '1.0.0',
 			integrity: 'sha512-x',
 			keyid: null,
+			sha256: 'x',
+			sha224: 'y',
 			verifiedAt: 'now',
 		});
+		writeFileSync(
+			join(root, '.verified'),
+			JSON.stringify({ version: '1.0.0', integrity: 'sha512-x', keyid: null, verifiedAt: 'now' }),
+		);
+		expect(readVerified(root), 'an entry without digests predates the trust record').toBeNull();
 		writeFileSync(join(root, '.verified'), '{"version":1}');
 		expect(readVerified(root)).toBeNull();
 		expect(readVerified(join(root, 'missing'))).toBeNull();

@@ -301,6 +301,19 @@ function moveAside(
 	const originalPath = `${path}${ORIGINAL_SUFFIX}`;
 	const current = captureMeta(path);
 	if (current.type === 'missing') {
+		if (known === undefined && existsSync(originalPath)) {
+			// A crash after the rename and before the record: adopt the aside copy so unlink can restore it.
+			record(dirs, {
+				binDir,
+				name,
+				target: path,
+				originalPath,
+				original: captureMeta(originalPath),
+				shim: MISSING,
+				linkedAt: new Date().toISOString(),
+			});
+			return { target: path, outcome: 'already' };
+		}
 		return {
 			target: path,
 			outcome: known !== undefined && existsSync(originalPath) ? 'already' : 'missing',
@@ -392,6 +405,12 @@ export function writeLinks(dirs: Dirs, links: LinksFile): void {
 /** Whether a recorded link still holds our shim, for `doctor` (spec CLI). */
 export function linkState(entry: LinkRecord): 'intact' | 'changed' | 'missing' {
 	const type = captureMeta(entry.target).type;
+	if (entry.shim.type === 'missing') {
+		// Moved aside on purpose (WIN-2): intact while nothing took its place and the preserved copy is still there.
+		const preserved =
+			entry.originalPath !== null && metaMatches(entry.originalPath, entry.original);
+		return type === 'missing' ? (preserved ? 'intact' : 'missing') : 'changed';
+	}
 	if (type === 'missing') {
 		return 'missing';
 	}

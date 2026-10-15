@@ -17,12 +17,16 @@ export interface Candidate {
 	entryPath: string | null;
 	/** `dist.signatures` from the registry; null for a cached candidate. */
 	signatures: RegistrySignature[] | null;
+	/** For a cached entry: the key that verified it, or null when only a project's pin did. */
+	keyid?: string | null;
+	/** For a cached entry: the tarball digests recorded at verification, so a pin can be judged without the bytes. */
+	digests?: { sha256: string; sha224: string } | null;
 }
 
 export interface Selection {
 	candidate: Candidate;
-	/** A hash the download must also match, from the spec that selected the candidate. */
-	hash: SpecHash | null;
+	/** Pins from the specs that selected the candidate; the download must match one of them. Empty: unpinned. */
+	hashes: SpecHash[];
 }
 
 export type SelectFailure =
@@ -42,13 +46,17 @@ function engineAccepts(candidate: Candidate, nodeVersion: string): boolean {
 
 function hashAccepts(candidate: Candidate, spec: NpmSpec): boolean {
 	if (spec.hash === null) {
-		return true;
+		// An entry that only a pin ever vouched for is not an alternative for an unpinned project (spec SEC-1).
+		return candidate.keyid !== null;
 	}
-	if (spec.hash.algorithm !== 'sha512') {
+	if (spec.hash.algorithm === 'sha512') {
+		return sriHex(candidate.integrity) === spec.hash.hex;
+	}
+	if (candidate.digests === undefined || candidate.digests === null) {
 		// Only the tarball bytes can answer a sha256 or sha224 pin; verification checks it after download.
 		return true;
 	}
-	return sriHex(candidate.integrity) === spec.hash.hex;
+	return candidate.digests[spec.hash.algorithm] === spec.hash.hex;
 }
 
 /** The hex digest of a `sha512-<base64>` SRI string, or null for any other form. */
@@ -77,9 +85,7 @@ export function selectCandidate(
 		const matching = specs.filter(
 			(entry) => matchesRange(candidate.version, entry) && hashAccepts(candidate, entry),
 		);
-		// An unpinned alternative is preferred: a sha256 or sha224 pin can only be judged after the download.
-		const spec = matching.find((entry) => entry.hash === null) ?? matching[0];
-		if (spec === undefined) {
+		if (matching.length === 0) {
 			continue;
 		}
 		if (!engineAccepts(candidate, nodeVersion)) {
@@ -89,7 +95,14 @@ export function selectCandidate(
 			continue;
 		}
 		if (best === null || semver.gt(candidate.version, best.candidate.version)) {
-			best = { candidate, hash: spec.hash };
+			// An unpinned alternative needs no pin; otherwise every matching pin is carried and any one may verify.
+			const unpinned = matching.some((entry) => entry.hash === null);
+			best = {
+				candidate,
+				hashes: unpinned
+					? []
+					: matching.flatMap((entry) => (entry.hash === null ? [] : [entry.hash])),
+			};
 		}
 	}
 	if (best !== null) {

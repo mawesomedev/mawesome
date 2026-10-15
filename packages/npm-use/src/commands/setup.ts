@@ -25,7 +25,14 @@ import {
 	type ProfileTarget,
 } from '../setup/profile.ts';
 import { isShell, profileBlock, type Shell } from '../setup/shell.ts';
-import { assertSafeHome, renderShims, SHIM_ABI, shimDir } from '../setup/shims.ts';
+import {
+	assertSafeHome,
+	renderShims,
+	SELECTORS,
+	SHIM_ABI,
+	shimAbi,
+	shimDir,
+} from '../setup/shims.ts';
 import { addToUserPath, powershellAllowsScripts, setCmdAutoRun } from '../setup/windows.ts';
 import type { CommandContext } from './context.ts';
 import { doctor } from './doctor.ts';
@@ -38,6 +45,8 @@ export interface SetupOptions {
 	modifyProfile: boolean;
 	cmdAutorun: boolean;
 	strict: boolean;
+	/** Write the Windows user PATH and AutoRun; the Action turns this off and relies on GITHUB_PATH. */
+	userPath: boolean;
 }
 
 export interface SetupReport {
@@ -156,8 +165,8 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 		}
 		if (!options.dryRun) {
 			installRuntime(context, distDir);
+			mkdirSync(shimDir(dirs.home), { recursive: true, mode: 0o755 });
 			for (const file of renderShims(dirs.home, platform, { powershell })) {
-				mkdirSync(shimDir(dirs.home), { recursive: true, mode: 0o755 });
 				mutateFile(
 					dirs.journal,
 					'launcher',
@@ -166,6 +175,15 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 					Buffer.from(file.content),
 					file.mode,
 				);
+			}
+			if (platform === 'win32' && !powershell) {
+				// A policy that turned restrictive leaves .ps1 shims PowerShell would still prefer over .cmd.
+				for (const name of SELECTORS) {
+					const stale = join(shimDir(dirs.home), `${name}.ps1`);
+					if (existsSync(stale) && shimAbi(readFileSync(stale, 'utf8')) !== null) {
+						mutateFile(dirs.journal, 'launcher', context.owner, stale, null);
+					}
+				}
 			}
 		}
 		for (const plan of plans) {
@@ -186,7 +204,7 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 				}
 			}
 		}
-		if (platform === 'win32' && !options.dryRun) {
+		if (platform === 'win32' && !options.dryRun && options.userPath) {
 			if (addToUserPath(env, shimDir(dirs.home))) {
 				env['Path'] = `${shimDir(dirs.home)};${env['Path'] ?? ''}`;
 				io.err(restartMessage());

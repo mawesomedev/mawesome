@@ -154,7 +154,7 @@ export function createInstaller(context: InstallContext): Installer {
 			);
 		}
 		const digests = await fileDigests(source.file);
-		checkIntegrity(digests, candidate.integrity, selection.hash);
+		checkIntegrity(digests, candidate.integrity, selection.hashes);
 		const keyid = await verifySignatures({
 			name: 'npm',
 			version: candidate.version,
@@ -163,7 +163,7 @@ export function createInstaller(context: InstallContext): Installer {
 			publishedAt: source.publishedAt,
 			keys: context.keys,
 			registry: source.registry,
-			pinned: selection.hash !== null,
+			pinned: selection.hashes.length > 0,
 		});
 		if (onPacked !== undefined) {
 			await onPacked(source, digests);
@@ -178,6 +178,8 @@ export function createInstaller(context: InstallContext): Installer {
 				version: candidate.version,
 				integrity: candidate.integrity,
 				keyid,
+				sha256: digests.sha256hex,
+				sha224: digests.sha224hex,
 				verifiedAt: new Date().toISOString(),
 			});
 			const canonical = canonicalEntry(context.dirs.cache, candidate.version, candidate.integrity);
@@ -193,7 +195,7 @@ export function createInstaller(context: InstallContext): Installer {
 	return {
 		nodeVersion: context.nodeVersion,
 		ownNpm: () => context.own,
-		cached: async () => listEntries(context.dirs.cache),
+		cached: async () => listEntries(context.dirs.cache, context.keys),
 		registry: async (specs) => (await registryVersions(specs)).map(toCandidate),
 		entryPathFor: (candidate) =>
 			canonicalEntry(context.dirs.cache, candidate.version, candidate.integrity),

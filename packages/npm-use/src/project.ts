@@ -91,7 +91,9 @@ export function parsePrefixFlags(argv: readonly string[], cwd: string): CliFlags
 export function isGlobalMode(flags: CliFlags, env: NodeJS.ProcessEnv): boolean {
 	// npm: `global || location === 'global'`, each setting resolved on its own, CLI over env.
 	const fromEnv = env['npm_config_global'];
-	const global = flags.global ?? (fromEnv === undefined ? null : fromEnv === 'true');
+	// nopt reads any env value as true except its spellings of false; an empty value is true.
+	const global =
+		flags.global ?? (fromEnv === undefined ? null : !['false', '0', 'null'].includes(fromEnv));
 	const location = flags.location ?? env['npm_config_location'] ?? null;
 	return global === true || location === 'global';
 }

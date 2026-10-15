@@ -21,7 +21,7 @@ Usage:
 Commands:
   setup                  Install the launcher, shims and shell snippets; --link also replaces npm
                          inside every nvm/fnm Node. --shell <s> (repeatable), --yes, --dry-run,
-                         --no-modify-profile, --cmd-autorun (Windows), --strict (exit 2 on skips).
+                         --no-modify-profile, --cmd-autorun and --no-user-path (Windows), --strict (exit 2 on skips).
   init <shell>           Print the snippet for zsh, bash, fish or powershell (--path, --hook; default both).
   doctor                 Check the installation; exit 1 when something needs fixing.
   which                  Print the npm that would run for the current directory.
@@ -69,6 +69,7 @@ function parse(argv: string[]) {
 			'dry-run': { type: 'boolean' },
 			'modify-profile': { type: 'boolean' },
 			'cmd-autorun': { type: 'boolean' },
+			'user-path': { type: 'boolean' },
 			strict: { type: 'boolean' },
 			'older-than': { type: 'string' },
 			rollback: { type: 'boolean' },
@@ -85,7 +86,16 @@ type Values = ReturnType<typeof parse>['values'];
 
 /** Command-specific options, so a flag meant for another command is an error rather than silently ignored. */
 const COMMAND_OPTIONS: Record<string, readonly (keyof Values)[]> = {
-	setup: ['link', 'shell', 'yes', 'dry-run', 'modify-profile', 'cmd-autorun', 'strict'],
+	setup: [
+		'link',
+		'shell',
+		'yes',
+		'dry-run',
+		'modify-profile',
+		'cmd-autorun',
+		'user-path',
+		'strict',
+	],
 	init: ['path', 'hook'],
 	doctor: [],
 	which: [],
@@ -171,6 +181,7 @@ async function dispatch(
 				modifyProfile: values['modify-profile'] ?? true,
 				cmdAutorun: values['cmd-autorun'] ?? false,
 				strict: values.strict ?? false,
+				userPath: values['user-path'] ?? true,
 			});
 		}
 		case 'init': {

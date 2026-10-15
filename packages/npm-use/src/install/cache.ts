@@ -9,6 +9,7 @@ import {
 	type Lease,
 	type OwnerRecord,
 } from '../state/lease.ts';
+import type { RegistryKey } from './keys.ts';
 import { readVerified } from './verify.ts';
 
 export const ENTRIES_DIR = 'npm';
@@ -80,7 +81,7 @@ export function validateEntry(entryPath: string, integrity: string): boolean {
 }
 
 /** Every verified entry in the cache as a candidate, whatever its validity; use-time validation decides. */
-export function listEntries(cacheRoot: string): Candidate[] {
+export function listEntries(cacheRoot: string, keys: readonly RegistryKey[] = []): Candidate[] {
 	let names: string[];
 	try {
 		names = readdirSync(join(cacheRoot, ENTRIES_DIR));
@@ -98,12 +99,21 @@ export function listEntries(cacheRoot: string): Candidate[] {
 		if (verified === null || manifest === null || manifest.version !== verified.version) {
 			continue;
 		}
+		// A key revoked since the entry was verified withdraws the entry with it.
+		if (
+			verified.keyid !== null &&
+			keys.some((key) => key.keyid === verified.keyid && key.revoked === true)
+		) {
+			continue;
+		}
 		candidates.push({
 			version: verified.version,
 			enginesNode: manifest.enginesNode,
 			integrity: verified.integrity,
 			entryPath,
 			signatures: null,
+			keyid: verified.keyid,
+			digests: { sha256: verified.sha256, sha224: verified.sha224 },
 		});
 	}
 	return candidates;

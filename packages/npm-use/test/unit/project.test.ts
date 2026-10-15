@@ -29,6 +29,8 @@ describe('isGlobalMode', () => {
 		const flags = parsePrefixFlags([], '/cwd');
 		expect(isGlobalMode(flags, {})).toBe(false);
 		expect(isGlobalMode(flags, { npm_config_global: 'true' })).toBe(true);
+		expect(isGlobalMode(flags, { npm_config_global: '' })).toBe(true);
+		expect(isGlobalMode(flags, { npm_config_global: '0' })).toBe(false);
 		expect(isGlobalMode(flags, { npm_config_location: 'global' })).toBe(true);
 		expect(
 			isGlobalMode(parsePrefixFlags(['--no-global'], '/cwd'), { npm_config_global: 'true' }),

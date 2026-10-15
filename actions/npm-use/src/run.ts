@@ -99,7 +99,7 @@ async function main(deps: RunDeps): Promise<void> {
 
 	// Install the launcher and shims under RUNNER_TEMP and put them on PATH for the following steps (spec ACT-4).
 	// No profile is edited and no shell is probed: GITHUB_PATH is the only PATH that matters here.
-	const setup = await runCommand(['setup', '--yes', '--no-modify-profile'], {
+	const setup = await runCommand(['setup', '--yes', '--no-modify-profile', '--no-user-path'], {
 		home,
 		env: actionEnv,
 		io: quietIo(),
@@ -284,6 +284,15 @@ async function restoreFromCache(
 		entryPath: null,
 		signatures: index.signatures,
 	};
+	if (
+		resolved !== null &&
+		(index.version !== resolved.version || index.integrity !== resolved.integrity)
+	) {
+		core.info(
+			`The cache holds npm ${index.version}, not the resolved ${resolved.version}; downloading instead.`,
+		);
+		return null;
+	}
 	const choice = selectCandidate(specs, [candidate], process.version);
 	if (choice.kind !== 'selected') {
 		core.info(

@@ -137,11 +137,16 @@ export const fetchAttestations: AttestationFetcher = async (url, config) => {
 };
 
 /** sigstore's verifier with this repository's identity pinned; the TUF cache lives under the state dir. */
+/** sigstore matches the identity as an unanchored regular expression, so the exact SAN is escaped and anchored. */
+export function identityPattern(identity: string = PROVENANCE_IDENTITY): string {
+	return `^${identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
+}
+
 export const verifyBundle: BundleVerifier = async (bundle, options) => {
 	const sigstore = await import('sigstore');
 	await sigstore.verify(bundle as Parameters<typeof sigstore.verify>[0], {
 		certificateIssuer: PROVENANCE_ISSUER,
-		certificateIdentityURI: PROVENANCE_IDENTITY,
+		certificateIdentityURI: identityPattern(),
 		tufCachePath: options.tufCachePath,
 	});
 };
@@ -199,7 +204,12 @@ export async function verifyProvenance(
 	deps: { fetch?: AttestationFetcher; verify?: BundleVerifier; env?: NodeJS.ProcessEnv } = {},
 ): Promise<void> {
 	const { name, version } = input;
-	const url = attestationUrl(input, input.config.registry);
+	let url: URL;
+	try {
+		url = attestationUrl(input, input.config.registry);
+	} catch (error) {
+		throw failure(name, version, `bad attestation URL: ${(error as Error).message}`);
+	}
 	let attestations: Attestation[];
 	try {
 		attestations = await (deps.fetch ?? fetchAttestations)(url, input.config);

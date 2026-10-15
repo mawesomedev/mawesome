@@ -4,12 +4,12 @@ import {
 	mkdirSync,
 	readdirSync,
 	readFileSync,
-	renameSync,
 	rmSync,
 	statSync,
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import { atomicRename, removeWithRetry } from '../state/atomic.ts';
 
 export const BOOTSTRAP_FILE = 'bootstrap.cjs';
 export const RUNTIME_FILE = 'runtime.cjs';
@@ -84,17 +84,17 @@ export function installVersion(
 	// The old copy moves aside and the new one moves in: two renames, no window where the version is deleted.
 	const replaced = join(versions, `.${version}.replaced.${process.pid}.${Date.now()}`);
 	if (existsSync(target)) {
-		renameSync(target, replaced);
+		atomicRename(target, replaced);
 	}
 	try {
-		renameSync(staging, target);
+		atomicRename(staging, target);
 	} catch (error) {
 		if (existsSync(replaced)) {
-			renameSync(replaced, target);
+			atomicRename(replaced, target);
 		}
 		throw error;
 	}
-	rmSync(replaced, { recursive: true, force: true });
+	removeWithRetry(replaced);
 	return target;
 }
 
@@ -102,7 +102,7 @@ export function installVersion(
 export function setCurrent(home: string, version: string): void {
 	const temp = join(home, `.current.${process.pid}.${Date.now()}`);
 	writeFileSync(temp, `${version}\n`);
-	renameSync(temp, join(home, CURRENT_FILE));
+	atomicRename(temp, join(home, CURRENT_FILE));
 }
 
 export function readCurrent(home: string): string | null {
@@ -126,7 +126,7 @@ export function installBootstrap(home: string, version: string): void {
 	const source = join(versionDir(home, version), BOOTSTRAP_FILE);
 	const temp = join(home, `.${BOOTSTRAP_FILE}.${process.pid}.${Date.now()}`);
 	copyFileSync(source, temp);
-	renameSync(temp, join(home, BOOTSTRAP_FILE));
+	atomicRename(temp, join(home, BOOTSTRAP_FILE));
 }
 
 export function readManifest(home: string, version: string): VersionManifest | null {
@@ -150,7 +150,7 @@ export function sweepReplaced(home: string): void {
 	for (const name of names) {
 		const match = /^\.(.+)\.replaced\./.exec(name);
 		if (match !== null && existsSync(join(home, VERSIONS_DIR, match[1] as string, RUNTIME_FILE))) {
-			rmSync(join(home, VERSIONS_DIR, name), { recursive: true, force: true });
+			removeWithRetry(join(home, VERSIONS_DIR, name));
 		}
 	}
 }
