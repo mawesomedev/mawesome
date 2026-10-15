@@ -76,6 +76,8 @@ function parse(argv: string[]) {
 			journal: { type: 'string' },
 			'confirm-dead-machine': { type: 'string' },
 			'purge-cache': { type: 'boolean' },
+			bundle: { type: 'string' },
+			'tuf-cache': { type: 'string' },
 			version: { type: 'boolean', short: 'v' },
 			help: { type: 'boolean', short: 'h' },
 		},
@@ -105,6 +107,7 @@ const COMMAND_OPTIONS: Record<string, readonly (keyof Values)[]> = {
 	'self-update': ['rollback'],
 	recover: ['journal', 'confirm-dead-machine'],
 	uninstall: ['yes', 'purge-cache'],
+	'verify-attestation': ['bundle', 'tuf-cache'],
 };
 
 function misplacedOptions(command: string, values: Values): string[] {
@@ -234,6 +237,15 @@ async function dispatch(
 				return EXIT.usage;
 			}
 			return recover(context, values.journal, values['confirm-dead-machine']);
+		}
+		case 'verify-attestation': {
+			// Internal: self-update runs it in a child Node whose env carries the proxy and CA settings.
+			if (values.bundle === undefined || values['tuf-cache'] === undefined) {
+				return EXIT.usage;
+			}
+			const { verifyBundleHere } = await import('../install/provenance.ts');
+			await verifyBundleHere(JSON.parse(readFileSync(values.bundle, 'utf8')), values['tuf-cache']);
+			return EXIT.ok;
 		}
 		case 'uninstall':
 			return uninstall(context, {

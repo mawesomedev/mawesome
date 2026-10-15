@@ -5,7 +5,9 @@ import {
 	PROVENANCE_IDENTITY,
 	SLSA_PREDICATE,
 	verifyProvenance,
+	childEnv,
 	identityPattern,
+	noProxyMatches,
 	tlsOptions,
 } from '../../src/install/provenance.ts';
 import { join } from 'node:path';
@@ -61,6 +63,40 @@ describe('attestationUrl', () => {
 			),
 		).toBe(false);
 		expect(pattern.test(`x${PROVENANCE_IDENTITY}`)).toBe(false);
+	});
+
+	it('matches noproxy the way npm does', () => {
+		const url = new URL('https://registry.internal.example:8443/npm');
+		expect(noProxyMatches('*', url)).toBe(true);
+		expect(noProxyMatches('internal.example', url)).toBe(true);
+		expect(noProxyMatches('.internal.example, other', url)).toBe(true);
+		expect(noProxyMatches('*.internal.example other', url)).toBe(true);
+		expect(noProxyMatches('registry.internal.example:8443', url)).toBe(true);
+		expect(noProxyMatches('registry.internal.example:443', url)).toBe(false);
+		expect(noProxyMatches('example', url)).toBe(true);
+		expect(noProxyMatches('ample', url)).toBe(false);
+		expect(noProxyMatches(null, url)).toBe(false);
+	});
+
+	it('builds the child env from the config alone', () => {
+		const env = childEnv(
+			{ ...config, httpsProxy: 'http://p:1', noproxy: 'in', cafile: '/ca.pem' },
+			{
+				PATH: '/bin',
+				HTTPS_PROXY: 'http://inherited',
+				no_proxy: 'x',
+				NODE_EXTRA_CA_CERTS: '/other',
+				NODE_OPTIONS: '--require x',
+				npm_config_proxy: 'y',
+			},
+		);
+		expect(env).toEqual({
+			PATH: '/bin',
+			https_proxy: 'http://p:1',
+			no_proxy: 'in',
+			NODE_EXTRA_CA_CERTS: '/ca.pem',
+		});
+		expect(childEnv(config, { ALL_PROXY: 'z' })).toEqual({});
 	});
 
 	it('turns a malformed advertised URL into M-PROVENANCE', async () => {
@@ -251,9 +287,9 @@ describe('verifyProvenance', () => {
 		expect(tlsOptions({ ...config, strictSsl: false })).toEqual({ rejectUnauthorized: false });
 	});
 
-	it('exposes the proxy settings to sigstore only for the duration of the call', async () => {
+	it('hands the verifier the config and env it builds the child from, without touching its own env', async () => {
 		const env: NodeJS.ProcessEnv = { https_proxy: 'http://old' };
-		let seen: string | undefined;
+		let seen: { httpsProxy: string | null; env: NodeJS.ProcessEnv } | undefined;
 		await verifyProvenance(
 			{
 				...input,
@@ -266,14 +302,17 @@ describe('verifyProvenance', () => {
 						bundle: bundleFor('pkg:npm/%40mawesome/npm-use@1.2.3', 'ab'.repeat(64)),
 					},
 				],
-				verify: async () => {
-					seen = `${env['https_proxy']} ${env['no_proxy']}`;
+				verify: async (_bundle, options) => {
+					seen = {
+						httpsProxy: options.config.httpsProxy,
+						env: childEnv(options.config, options.env),
+					};
 				},
 				env,
 			},
 		);
-		expect(seen).toBe('http://proxy.example:3128 internal');
-		expect(env['https_proxy']).toBe('http://old');
-		expect(env['no_proxy']).toBeUndefined();
+		expect(seen?.httpsProxy).toBe('http://proxy.example:3128');
+		expect(seen?.env).toEqual({ https_proxy: 'http://proxy.example:3128', no_proxy: 'internal' });
+		expect(env).toEqual({ https_proxy: 'http://old' });
 	});
 });

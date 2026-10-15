@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Agent, ProxyAgent, request, type Dispatcher } from 'undici';
 import { EXIT, NpmUseError } from '../errors.ts';
@@ -28,7 +29,10 @@ export interface Attestation {
 }
 
 export type AttestationFetcher = (url: URL, config: NpmConfigView) => Promise<Attestation[]>;
-export type BundleVerifier = (bundle: unknown, options: { tufCachePath: string }) => Promise<void>;
+export type BundleVerifier = (
+	bundle: unknown,
+	options: { tufCachePath: string; config: NpmConfigView; env: NodeJS.ProcessEnv },
+) => Promise<void>;
 
 function failure(name: string, version: string, detail: string): NpmUseError {
 	return new NpmUseError(
@@ -87,13 +91,29 @@ export function tlsOptions(config: NpmConfigView): {
 	};
 }
 
+/** `noproxy` the way @npmcli/agent reads it: comma or space separated, `*` for all, `host[:port]`, leading dots and `*.`. */
+export function noProxyMatches(noproxy: string | null, url: URL): boolean {
+	const port = url.port || (url.protocol === 'https:' ? '443' : '80');
+	return (noproxy ?? '')
+		.split(/[\s,]+/)
+		.map((item) => item.trim().toLowerCase())
+		.filter((item) => item !== '')
+		.some((item) => {
+			if (item === '*') {
+				return true;
+			}
+			const [host, itemPort] = item.split(':') as [string, string | undefined];
+			if (itemPort !== undefined && itemPort !== port) {
+				return false;
+			}
+			const bare = host.replace(/^\*?\./, '');
+			return url.hostname === bare || url.hostname.endsWith(`.${bare}`);
+		});
+}
+
 function dispatcherFor(config: NpmConfigView, url: URL): Dispatcher {
 	const proxy = url.protocol === 'https:' ? (config.httpsProxy ?? config.proxy) : config.proxy;
-	const bypass = (config.noproxy ?? '')
-		.split(',')
-		.map((item) => item.trim())
-		.filter((item) => item !== '')
-		.some((item) => url.hostname === item || url.hostname.endsWith(`.${item.replace(/^\./, '')}`));
+	const bypass = noProxyMatches(config.noproxy, url);
 	const tls = tlsOptions(config);
 	if (proxy !== null && !bypass) {
 		return new ProxyAgent({ uri: proxy, requestTls: tls });
@@ -147,14 +167,89 @@ export function identityPattern(identity: string = PROVENANCE_IDENTITY): string 
 	return `^${identity.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
 }
 
-export const verifyBundle: BundleVerifier = async (bundle, options) => {
+/** The in-process verifier, run by the `verify-attestation` child command. */
+export async function verifyBundleHere(bundle: unknown, tufCachePath: string): Promise<void> {
 	const sigstore = await import('sigstore');
 	await sigstore.verify(bundle as Parameters<typeof sigstore.verify>[0], {
 		certificateIssuer: PROVENANCE_ISSUER,
 		certificateIdentityURI: identityPattern(),
-		tufCachePath: options.tufCachePath,
+		tufCachePath,
 	});
+}
+
+/** How to reach this program again from a child process: the entry argv plus the `cli` selector under the launcher. */
+export function selfCommand(): string[] {
+	const entry = process.argv[1] ?? '';
+	return entry.endsWith('bootstrap.cjs') ? [entry, 'cli'] : [entry];
+}
+
+/**
+ * Runs the verifier in a child Node (spec DL-2): sigstore reaches TUF through make-fetch-happen, which reads
+ * proxies from the env, and Node reads NODE_EXTRA_CA_CERTS only at start. The child's env carries nothing else.
+ */
+export const verifyBundle: BundleVerifier = async (bundle, options) => {
+	const dir = mkdtempSync(join(options.tufCachePath, 'bundle-'));
+	const file = join(dir, 'bundle.json');
+	writeFileSync(file, JSON.stringify(bundle), { mode: 0o600 });
+	const env = childEnv(options.config, options.env);
+	const [entry, ...prefix] = selfCommand();
+	try {
+		await new Promise<void>((resolve, reject) => {
+			execFile(
+				process.execPath,
+				[
+					entry as string,
+					...prefix,
+					'verify-attestation',
+					'--bundle',
+					file,
+					'--tuf-cache',
+					options.tufCachePath,
+				],
+				{ env, encoding: 'utf8', timeout: 300_000, windowsHide: true },
+				(error, stdout, stderr) => {
+					if (error === null) {
+						resolve();
+						return;
+					}
+					reject(
+						new Error(
+							`${stderr.trim() || stdout.trim() || error.message}`.replace(/^npm-use: /, ''),
+						),
+					);
+				},
+			);
+		});
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 };
+
+const PROXY_KEYS = /^(https?_proxy|all_proxy|no_proxy|proxy|node_extra_ca_certs|node_options)$/i;
+
+/** The child's env: the parent's minus every proxy and Node override, plus only what the npm config says. */
+export function childEnv(config: NpmConfigView, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	const child: NodeJS.ProcessEnv = {};
+	for (const [key, value] of Object.entries(env)) {
+		if (!PROXY_KEYS.test(key) && !/^npm_config_/i.test(key)) {
+			child[key] = value;
+		}
+	}
+	const httpsProxy = config.httpsProxy ?? config.proxy;
+	if (httpsProxy !== null) {
+		child['https_proxy'] = httpsProxy;
+	}
+	if (config.proxy !== null) {
+		child['http_proxy'] = config.proxy;
+	}
+	if (config.noproxy !== null) {
+		child['no_proxy'] = config.noproxy;
+	}
+	if (config.cafile !== null) {
+		child['NODE_EXTRA_CA_CERTS'] = config.cafile;
+	}
+	return child;
+}
 
 interface Statement {
 	subject: Array<{ name: string; digest: Record<string, string> }>;
@@ -257,45 +352,16 @@ export async function verifyProvenance(
 	const tufCachePath = join(input.stateDir, 'sigstore');
 	mkdirSync(tufCachePath, { recursive: true, mode: 0o700 });
 	try {
-		await withProxyEnv(input.config, deps.env ?? process.env, () =>
-			(deps.verify ?? verifyBundle)(provenance.bundle, { tufCachePath }),
-		);
+		await (deps.verify ?? verifyBundle)(provenance.bundle, {
+			tufCachePath,
+			config: input.config,
+			env: deps.env ?? process.env,
+		});
 	} catch (error) {
 		throw failure(
 			name,
 			version,
 			`signature verification failed: ${redactUrls((error as Error).message)}`,
 		);
-	}
-}
-
-/**
- * sigstore fetches TUF metadata through make-fetch-happen, which reads proxy settings from the env (spec DL-2).
- * The npm config's proxy values are exposed only for the duration of the call.
- */
-async function withProxyEnv<T>(
-	config: NpmConfigView,
-	env: NodeJS.ProcessEnv,
-	run: () => Promise<T>,
-): Promise<T> {
-	const keys = ['https_proxy', 'http_proxy', 'no_proxy', 'NODE_EXTRA_CA_CERTS'] as const;
-	const saved = new Map(keys.map((key) => [key, env[key]]));
-	const assign = (key: (typeof keys)[number], value: string | null): void => {
-		if (value === null) {
-			delete env[key];
-		} else {
-			env[key] = value;
-		}
-	};
-	assign('https_proxy', config.httpsProxy ?? config.proxy);
-	assign('http_proxy', config.proxy);
-	assign('no_proxy', config.noproxy);
-	assign('NODE_EXTRA_CA_CERTS', config.cafile);
-	try {
-		return await run();
-	} finally {
-		for (const [key, value] of saved) {
-			assign(key, value ?? null);
-		}
 	}
 }

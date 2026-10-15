@@ -219,7 +219,7 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 	report.skipped =
 		report.profiles.filter((entry) => entry.outcome === 'printed' || entry.outcome === 'declined')
 			.length +
-		report.links.filter((link) => link.outcome === 'foreign' || link.outcome === 'unwritable')
+		report.links.filter((link) => ['foreign', 'unwritable', 'missing'].includes(link.outcome))
 			.length;
 	if (context.json) {
 		io.out(JSON.stringify(report, null, 2));
