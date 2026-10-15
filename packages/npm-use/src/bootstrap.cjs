@@ -1,0 +1,210 @@
+'use strict';
+/*
+ * npm-use launcher entry (spec RUN-2), called by the shims as `node bootstrap.cjs <npm|npx|cli> [arguments]`.
+ * Hand-written ES5 so any Node from 10 up can run it and fall back to Node's own npm below the floor.
+ */
+var fs = require('fs');
+var path = require('path');
+var childProcess = require('child_process');
+
+var LAUNCHER_ABI = 1;
+var FLOOR = [22, 9, 0];
+var FLOOR_TEXT = '22.9.0';
+var VERSION_RE = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+var home = __dirname;
+
+function fail(message, code) {
+	process.stderr.write('npm-use: ' + message + '\n');
+	process.exitCode = code;
+}
+
+function setupHint() {
+	return 'Run "npx --prefix ~ -y @mawesome/npm-use setup" to reinstall npm-use.';
+}
+
+function belowFloor(version) {
+	var parts = version.split('.');
+	for (var i = 0; i < 3; i += 1) {
+		var part = parseInt(parts[i], 10) || 0;
+		if (part < FLOOR[i]) {
+			return true;
+		}
+		if (part > FLOOR[i]) {
+			return false;
+		}
+	}
+	return false;
+}
+
+function ownNpmRoot() {
+	if (process.platform === 'win32') {
+		return path.join(path.dirname(process.execPath), 'node_modules', 'npm');
+	}
+	var real = process.execPath;
+	try {
+		real = fs.realpathSync(process.execPath);
+	} catch (error) {
+		// Resolve as given; a missing npm is reported when spawning fails.
+	}
+	return path.join(path.dirname(real), '..', 'lib', 'node_modules', 'npm');
+}
+
+function declaresNpm(manifest) {
+	var devEngines = manifest && manifest.devEngines;
+	var pm = devEngines && devEngines.packageManager;
+	if (pm) {
+		var entries = Array.isArray(pm) ? pm : [pm];
+		for (var i = 0; i < entries.length; i += 1) {
+			if (entries[i] && entries[i].name === 'npm') {
+				return true;
+			}
+		}
+	}
+	return (
+		typeof manifest.packageManager === 'string' && manifest.packageManager.indexOf('npm@') === 0
+	);
+}
+
+/** Whether the nearest package.json above cwd asks for an npm version, so the fallback can say it is ignored. */
+function projectDeclaresNpm() {
+	var dir = process.cwd();
+	for (;;) {
+		var file = path.join(dir, 'package.json');
+		if (fs.existsSync(file)) {
+			try {
+				return declaresNpm(JSON.parse(fs.readFileSync(file, 'utf8')));
+			} catch (error) {
+				return false;
+			}
+		}
+		var parent = path.dirname(dir);
+		if (parent === dir) {
+			return false;
+		}
+		dir = parent;
+	}
+}
+
+/** Runs a Node script with the inherited stdio and mirrors its exit, by code or by signal. */
+function runScript(script, args) {
+	var child = childProcess.spawn(process.execPath, [script].concat(args), { stdio: 'inherit' });
+	child.on('error', function (error) {
+		fail('cannot start ' + script + ': ' + error.message, 1);
+	});
+	child.on('exit', function (code, signal) {
+		if (signal) {
+			process.kill(process.pid, signal);
+			return;
+		}
+		process.exitCode = code === null ? 1 : code;
+	});
+}
+
+function runOwnNpm(selector, args) {
+	if (projectDeclaresNpm()) {
+		process.stderr.write(
+			'npm-use: Node ' +
+				process.versions.node +
+				' is below ' +
+				FLOOR_TEXT +
+				"; running Node's own npm and ignoring the project's npm requirement. Upgrade Node to honour it.\n",
+		);
+	}
+	var cli = selector === 'npx' ? 'npx-cli.js' : 'npm-cli.js';
+	runScript(path.join(ownNpmRoot(), 'bin', cli), args);
+}
+
+function runtimePath(candidate) {
+	if (candidate) {
+		return path.join(__dirname, 'runtime.cjs');
+	}
+	var current;
+	try {
+		current = fs.readFileSync(path.join(home, 'current'), 'utf8').trim();
+	} catch (error) {
+		return null;
+	}
+	if (!VERSION_RE.test(current)) {
+		return null;
+	}
+	return path.join(home, 'versions', current, 'runtime.cjs');
+}
+
+function main() {
+	var args = process.argv.slice(2);
+	var candidate = false;
+	if (args[0] === '--candidate') {
+		candidate = true;
+		args.shift();
+	}
+	var selector = args.shift();
+	if (selector !== 'npm' && selector !== 'npx' && selector !== 'cli') {
+		fail('usage: bootstrap.cjs <npm|npx|cli> [arguments]', 64);
+		return;
+	}
+	if (belowFloor(process.versions.node)) {
+		if (selector === 'cli') {
+			fail(
+				'npm-use needs Node ' +
+					FLOOR_TEXT +
+					' or newer; the active Node is ' +
+					process.versions.node +
+					'. ' +
+					setupHint(),
+				64,
+			);
+			return;
+		}
+		runOwnNpm(selector, args);
+		return;
+	}
+	var script = runtimePath(candidate);
+	if (script === null) {
+		fail(
+			'launcher mismatch: the current pointer in ' +
+				home +
+				' is missing or malformed. ' +
+				setupHint(),
+			6,
+		);
+		return;
+	}
+	var runtime;
+	try {
+		runtime = require(script);
+	} catch (error) {
+		fail(
+			'launcher mismatch: cannot load ' + script + ' (' + error.message + '). ' + setupHint(),
+			6,
+		);
+		return;
+	}
+	if (
+		typeof runtime.abi !== 'number' ||
+		runtime.abi > LAUNCHER_ABI ||
+		runtime.abi < LAUNCHER_ABI - 1
+	) {
+		fail(
+			'launcher mismatch: runtime ABI ' +
+				runtime.abi +
+				' is not supported by launcher ABI ' +
+				LAUNCHER_ABI +
+				'. ' +
+				setupHint(),
+			6,
+		);
+		return;
+	}
+	runtime.main(selector, args, { home: home, launcherAbi: LAUNCHER_ABI }).then(
+		function (code) {
+			process.exitCode = code;
+			return code;
+		},
+		function (error) {
+			fail(error && error.stack ? error.stack : String(error), 1);
+			return 1;
+		},
+	);
+}
+
+main();

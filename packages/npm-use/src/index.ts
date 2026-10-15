@@ -40,6 +40,8 @@ export interface ResolveResult {
 export interface ResolveOptions {
 	env?: NodeJS.ProcessEnv;
 	offline?: boolean;
+	/** The npm-use home holding the cache namespace; defaults to `NPM_USE_HOME` or the platform location. */
+	home?: string;
 }
 
 /** The lookups resolution depends on; the install layer provides the real ones. */
@@ -59,7 +61,7 @@ export function resolveNpm(
 	options: ResolveOptions = {},
 ): Promise<ResolveResult> {
 	const env = options.env ?? process.env;
-	return resolveNpmWith(argv, cwd, options, createInstaller(createContext(env)));
+	return resolveNpmWith(argv, cwd, options, createInstaller(createContext(env, options.home)));
 }
 
 export async function resolveNpmWith(

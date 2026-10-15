@@ -66,7 +66,26 @@ export function npmPackageEntries(
 	if (options.engines !== undefined) {
 		manifest['engines'] = { node: options.engines };
 	}
-	const cli = `#!/usr/bin/env node\nconsole.log(require('../package.json').version + ' ' + process.argv.slice(2).join(' '));\n`;
+	/*
+	 * The stand-in CLI prints its version and args, exits with `--exit <n>`, prints argv[1] with `--argv1`,
+	 * and with `--sleep` reports each signal it receives so launcher tests can watch forwarding.
+	 */
+	const cli = [
+		'#!/usr/bin/env node',
+		'const args = process.argv.slice(2);',
+		"const exitAt = args.indexOf('--exit');",
+		'if (exitAt !== -1) process.exit(Number(args[exitAt + 1]));',
+		"if (args.includes('--argv1')) { console.log(process.argv[1]); process.exit(0); }",
+		"console.log(require('../package.json').version + ' ' + args.join(' '));",
+		"if (args.includes('--sleep')) {",
+		"  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT']) {",
+		"    process.on(signal, () => { console.log('got ' + signal); setTimeout(() => process.kill(process.pid, signal), 50); process.removeAllListeners(signal); });",
+		'  }',
+		"  console.log('sleeping');",
+		'  setInterval(() => {}, 1000);',
+		'}',
+		'',
+	].join('\n');
 	return [
 		{ path: 'package/', type: '5' },
 		{ path: 'package/package.json', content: JSON.stringify(manifest) },

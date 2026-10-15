@@ -1,8 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig, type UserConfig } from 'tsdown';
 
+const { version } = JSON.parse(readFileSync(new URL('package.json', import.meta.url), 'utf8')) as {
+	version: string;
+};
+const define = { NPM_USE_BUILD_VERSION: JSON.stringify(version) };
+
 /*
- * The library is dual ESM/CJS with per-format declarations.
- * Everything targets the runtime floor (spec section 2), not the repo's development Node.
+ * Three outputs (spec section 3.1): the dual ESM/CJS library, the ESM bin, and the CJS runtime bundle
+ * that the launcher loads from the home, with its lazy chunks and the hand-written bootstrap beside it.
+ * Everything targets the runtime floor, not the repo's development Node.
  */
 const config: UserConfig[] = defineConfig([
 	{
@@ -14,6 +21,7 @@ const config: UserConfig[] = defineConfig([
 		target: 'node22.9',
 		sourcemap: true,
 		clean: true,
+		define,
 	},
 	{
 		entry: ['src/cli.ts'],
@@ -24,6 +32,21 @@ const config: UserConfig[] = defineConfig([
 		target: 'node22.9',
 		sourcemap: true,
 		clean: false,
+		define,
+	},
+	{
+		entry: ['src/runtime.ts'],
+		outDir: 'dist/runtime',
+		format: ['cjs'],
+		dts: false,
+		fixedExtension: true,
+		platform: 'node',
+		target: 'node22.9',
+		sourcemap: false,
+		clean: false,
+		noExternal: /./,
+		define,
+		copy: [{ from: 'src/bootstrap.cjs', to: 'dist/runtime' }],
 	},
 ]);
 

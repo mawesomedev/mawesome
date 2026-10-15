@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 /** A registry signing key as `https://registry.npmjs.org/-/npm/v1/keys` lists it (spec SEC-1). */
 export interface RegistryKey {
 	keyid: string;
@@ -24,3 +27,30 @@ export const REGISTRY_KEYS: readonly RegistryKey[] = [
 		expires: null,
 	},
 ];
+
+export const EXTRA_KEYS_FILE = 'keys.json';
+
+/**
+ * Keys added beside the built-in ones from `<home>/state/keys.json`, for registries that sign with their own keys.
+ * Anything able to write there could replace the runtime itself, so this adds no trust the home does not already hold.
+ */
+export function loadKeyring(stateDir: string): RegistryKey[] {
+	let extra: unknown;
+	try {
+		extra = JSON.parse(readFileSync(join(stateDir, EXTRA_KEYS_FILE), 'utf8'));
+	} catch {
+		return [...REGISTRY_KEYS];
+	}
+	const keys = Array.isArray(extra) ? extra : [];
+	return [
+		...REGISTRY_KEYS,
+		...keys.filter(
+			(key): key is RegistryKey =>
+				typeof key === 'object' &&
+				key !== null &&
+				typeof (key as RegistryKey).keyid === 'string' &&
+				typeof (key as RegistryKey).key === 'string' &&
+				((key as RegistryKey).expires === null || typeof (key as RegistryKey).expires === 'string'),
+		),
+	];
+}

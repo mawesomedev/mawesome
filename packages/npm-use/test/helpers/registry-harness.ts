@@ -68,6 +68,13 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		NPM_USE_HOME: join(root, 'home'),
 		...options.env,
 	};
+	mkdirSync(join(root, 'home', 'state'), { recursive: true });
+	writeFileSync(
+		join(root, 'home', 'state', 'keys.json'),
+		JSON.stringify(
+			options.keys ?? [{ keyid: registry.keyid, key: registry.publicKeyBase64, expires: null }],
+		),
+	);
 	const base = createContext(env, join(root, 'home'));
 	const context: InstallContext = {
 		...base,

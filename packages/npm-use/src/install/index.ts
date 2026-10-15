@@ -12,7 +12,7 @@ import { resolveDirs, type Dirs } from '../setup/home.ts';
 import { canonicalEntry, listEntries, publishEntry, validateEntry } from './cache.ts';
 import { loadNpmConfig, type NpmConfigView } from './config.ts';
 import { newWorkDir, Transport, transportUsable, type RegistryVersion } from './fetch.ts';
-import { REGISTRY_KEYS, type RegistryKey } from './keys.ts';
+import { loadKeyring, type RegistryKey } from './keys.ts';
 import {
 	checkIntegrity,
 	fileDigests,
@@ -30,12 +30,13 @@ export interface InstallContext {
 }
 
 export function createContext(env: NodeJS.ProcessEnv = process.env, home?: string): InstallContext {
+	const dirs = resolveDirs(env, home);
 	return {
-		dirs: resolveDirs(env, home),
+		dirs,
 		own: findOwnNpm(),
 		env,
 		nodeVersion: process.version,
-		keys: REGISTRY_KEYS,
+		keys: loadKeyring(dirs.state),
 	};
 }
 
