@@ -180,6 +180,26 @@ describe('link and unlink', () => {
 		});
 		expect(linkOne(dirs, owner, join(root, 'bin'), ps1).outcome).toBe('already');
 		expect(readLinks(dirs).entries.some((item) => item.name === 'npm.ps1')).toBe(true);
+		// The policy turned restrictive after a permissive link: our .ps1 shim goes, the original stays aside.
+		const permissive = linkTargets(join(root, 'home'), 'win32', true).find(
+			(target) => target.name === 'npx.ps1',
+		)!;
+		expect(linkOne(dirs, owner, join(root, 'bin'), permissive).outcome).toBe('linked');
+		expect(readFileSync(join(root, 'bin', 'npx.ps1'), 'utf8')).toContain('bootstrap.cjs');
+		const restricted = linkTargets(join(root, 'home'), 'win32', false).find(
+			(target) => target.name === 'npx.ps1',
+		)!;
+		expect(linkOne(dirs, owner, join(root, 'bin'), restricted).outcome).toBe('linked');
+		expect(existsSync(join(root, 'bin', 'npx.ps1'))).toBe(false);
+		expect(readFileSync(join(root, 'bin', 'npx.ps1.npm-use-original'), 'utf8')).toBe('x');
+		expect(
+			unlinkOne(
+				dirs,
+				owner,
+				readLinks(dirs).entries.find((item) => item.name === 'npx.ps1')!,
+			),
+		).toBe('restored');
+		expect(readFileSync(join(root, 'bin', 'npx.ps1'), 'utf8')).toBe('x');
 		writeFileSync(join(root, 'bin', 'npm.ps1'), 'someone put a file back');
 		expect(linkState(entry)).toBe('changed');
 		expect(unlinkOne(dirs, owner, entry)).toBe('changed');

@@ -1,4 +1,5 @@
 import * as core from '@actions/core';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -110,7 +111,9 @@ async function main(deps: RunDeps): Promise<void> {
 	core.addPath(join(home, 'shims'));
 
 	// Resolve once; every later step runs this exact version through the shims (spec ACT-1).
-	const installer = createInstaller(createContext(actionEnv, home));
+	// Later steps run `node` from PATH (setup-node's), which may not be the runtime this action runs on.
+	const node = pathNode(actionEnv);
+	const installer = createInstaller(createContext(actionEnv, home, node));
 	const artifactDir = join(runnerTemp, 'npm-use', 'artifact');
 	const store = deps.cache ?? actionsCache;
 	let result: ResolveResult;
@@ -209,6 +212,26 @@ async function main(deps: RunDeps): Promise<void> {
 	report(result, join(ensured.entryPath, 'bin', 'npm-cli.js'), false);
 }
 
+/** The `node` the shims will resolve through PATH, asked for its own path and version. */
+function pathNode(env: NodeJS.ProcessEnv): { execPath: string; version: string } {
+	try {
+		const out = execFileSync(
+			process.platform === 'win32' ? 'node.exe' : 'node',
+			['-p', 'JSON.stringify([process.execPath, process.version])'],
+			{
+				encoding: 'utf8',
+				env,
+				stdio: ['ignore', 'pipe', 'ignore'],
+				windowsHide: true,
+			},
+		);
+		const [execPath, version] = JSON.parse(out) as [string, string];
+		return { execPath, version };
+	} catch {
+		return { execPath: process.execPath, version: process.version };
+	}
+}
+
 /** The project's npm requirements, read the way the launcher reads them; null when it declares nothing. */
 function projectSpecs(workdir: string, env: NodeJS.ProcessEnv): NpmSpec[] | null {
 	const override = env['NPM_USE_VERSION'];
@@ -234,7 +257,7 @@ async function keyPrefix(
 ): Promise<string> {
 	const constraint = hashOf(JSON.stringify(specs));
 	const registry = await installer.registryIdentity();
-	return `npm-use-v${SCHEMA}-${env['RUNNER_OS'] ?? process.platform}-node${process.version}-${registry}-${constraint}-`;
+	return `npm-use-v${SCHEMA}-${env['RUNNER_OS'] ?? process.platform}-node${installer.nodeVersion}-${registry}-${constraint}-`;
 }
 
 function readIndex(dir: string): ArtifactIndex | null {
@@ -293,7 +316,7 @@ async function restoreFromCache(
 		);
 		return null;
 	}
-	const choice = selectCandidate(specs, [candidate], process.version);
+	const choice = selectCandidate(specs, [candidate], installer.nodeVersion);
 	if (choice.kind !== 'selected') {
 		core.info(
 			`The restored npm ${index.version} no longer satisfies the project; downloading instead.`,

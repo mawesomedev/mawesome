@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import semver from 'semver';
 import { EXIT, NpmUseError } from '../errors.ts';
-import { integrityMessage, transportMessage } from '../messages.ts';
+import { integrityMessage, redactUrls, transportMessage } from '../messages.ts';
 import type { OwnNpm } from '../own-npm.ts';
 import type { RegistrySignature } from '../select.ts';
 import { sanitizeEnv, type NpmConfigView } from './config.ts';
@@ -47,12 +47,20 @@ export class Transport {
 	readonly #config: NpmConfigView;
 	readonly #env: NodeJS.ProcessEnv;
 	readonly #tmpRoot: string;
+	readonly #nodePath: string;
 
-	constructor(own: OwnNpm, config: NpmConfigView, env: NodeJS.ProcessEnv, tmpRoot: string) {
+	constructor(
+		own: OwnNpm,
+		config: NpmConfigView,
+		env: NodeJS.ProcessEnv,
+		tmpRoot: string,
+		nodePath: string = process.execPath,
+	) {
 		this.#own = own;
 		this.#config = config;
 		this.#env = sanitizeEnv(env);
 		this.#tmpRoot = tmpRoot;
+		this.#nodePath = nodePath;
 	}
 
 	/** Versions of npm matching `range`, newest last as npm lists them; an unmatched range is an empty list. */
@@ -160,7 +168,7 @@ export class Transport {
 		try {
 			const { stdout: output } = await new Promise<{ stdout: string }>((resolve, reject) => {
 				execFile(
-					process.execPath,
+					this.#nodePath,
 					argv,
 					{ cwd, env: this.#env, maxBuffer: MAX_OUTPUT, timeout: 300_000, windowsHide: true },
 					(error, stdout, stderr) => {
@@ -184,14 +192,15 @@ export class Transport {
 			)
 				.replace(/^npm (ERR!|error) /, '')
 				.trim();
+			const redacted = redactUrls(line);
 			if (/\bEINTEGRITY\b/.test(stderr)) {
 				throw new NpmUseError(
 					'M-INTEGRITY',
 					EXIT.verification,
-					integrityMessage('the registry integrity', 'other bytes', line),
+					integrityMessage('the registry integrity', 'other bytes', redacted),
 				);
 			}
-			throw this.#failure(line);
+			throw this.#failure(redacted);
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}

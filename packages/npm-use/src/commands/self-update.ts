@@ -28,7 +28,13 @@ import {
 	versionDir,
 } from '../setup/layout.ts';
 import { executionPolicy } from '../setup/profile.ts';
-import { LAUNCHERS_DIR, renderShims, shimAbi, shimDir } from '../setup/shims.ts';
+import {
+	LAUNCHERS_DIR,
+	renderShims,
+	shimAbi,
+	shimDir,
+	stalePowershellShims,
+} from '../setup/shims.ts';
 import { powershellAllowsScripts } from '../setup/windows.ts';
 import type { CommandContext } from './context.ts';
 
@@ -111,6 +117,11 @@ export function installLaunchers(context: CommandContext, version: string): void
 			Buffer.from(file.content),
 			file.mode,
 		);
+	}
+	if (platform === 'win32' && !powershell) {
+		for (const stale of stalePowershellShims(dirs.home)) {
+			mutateFile(dirs.journal, 'launcher', context.owner, stale, null);
+		}
 	}
 }
 

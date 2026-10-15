@@ -72,6 +72,17 @@ describe('attestationUrl', () => {
 		).rejects.toMatchObject({ id: 'M-PROVENANCE' });
 	});
 
+	it('strips inline credentials from the request URL and from messages', async () => {
+		const withCreds = { ...config, registry: 'https://user:secret@registry.example/' };
+		const url = attestationUrl(input, withCreds.registry);
+		expect(url.username).toBe('');
+		expect(url.href).not.toContain('secret');
+		const { redactUrls } = await import('../../src/messages.ts');
+		expect(redactUrls('see https://user:secret@registry.example/x and http://a@b/')).toBe(
+			'see https://***@registry.example/x and http://***@b/',
+		);
+	});
+
 	it('never follows an advertised path to another origin', () => {
 		for (const evil of [
 			'//evil.example/-/npm/v1/attestations/x',

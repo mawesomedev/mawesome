@@ -28,10 +28,9 @@ import { isShell, profileBlock, type Shell } from '../setup/shell.ts';
 import {
 	assertSafeHome,
 	renderShims,
-	SELECTORS,
 	SHIM_ABI,
-	shimAbi,
 	shimDir,
+	stalePowershellShims,
 } from '../setup/shims.ts';
 import { addToUserPath, powershellAllowsScripts, setCmdAutoRun } from '../setup/windows.ts';
 import type { CommandContext } from './context.ts';
@@ -177,12 +176,8 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 				);
 			}
 			if (platform === 'win32' && !powershell) {
-				// A policy that turned restrictive leaves .ps1 shims PowerShell would still prefer over .cmd.
-				for (const name of SELECTORS) {
-					const stale = join(shimDir(dirs.home), `${name}.ps1`);
-					if (existsSync(stale) && shimAbi(readFileSync(stale, 'utf8')) !== null) {
-						mutateFile(dirs.journal, 'launcher', context.owner, stale, null);
-					}
+				for (const stale of stalePowershellShims(dirs.home)) {
+					mutateFile(dirs.journal, 'launcher', context.owner, stale, null);
 				}
 			}
 		}

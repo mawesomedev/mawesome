@@ -300,6 +300,12 @@ function moveAside(
 	const path = join(binDir, name);
 	const originalPath = `${path}${ORIGINAL_SUFFIX}`;
 	const current = captureMeta(path);
+	if (known !== undefined && known.shim.type !== 'missing' && metaMatches(path, known.shim)) {
+		// The policy turned restrictive after a link: drop our shim and keep the preserved original aside.
+		mutateFile(dirs.journal, 'link', owner, path, null);
+		record(dirs, { ...known, shim: MISSING, linkedAt: new Date().toISOString() });
+		return { target: path, outcome: 'linked' };
+	}
 	if (current.type === 'missing') {
 		if (known === undefined && existsSync(originalPath)) {
 			// A crash after the rename and before the record: adopt the aside copy so unlink can restore it.

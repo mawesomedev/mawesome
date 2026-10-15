@@ -35,16 +35,29 @@ export interface InstallContext {
 	own: OwnNpm | null;
 	env: NodeJS.ProcessEnv;
 	nodeVersion: string;
+	/** The Node that runs the transport and, through the shims, npm itself. */
+	nodePath: string;
 	keys: readonly RegistryKey[];
 }
 
-export function createContext(env: NodeJS.ProcessEnv = process.env, home?: string): InstallContext {
+export interface ContextNode {
+	/** The Node binary the shims resolve through PATH; the Action passes the one setup-node installed. */
+	execPath: string;
+	version: string;
+}
+
+export function createContext(
+	env: NodeJS.ProcessEnv = process.env,
+	home?: string,
+	node: ContextNode = { execPath: process.execPath, version: process.version },
+): InstallContext {
 	const dirs = resolveDirs(env, home);
 	return {
 		dirs,
-		own: findOwnNpm(),
+		own: findOwnNpm(node.execPath),
 		env,
-		nodeVersion: process.version,
+		nodeVersion: node.version,
+		nodePath: node.execPath,
 		keys: loadKeyring(dirs.state),
 	};
 }
@@ -86,7 +99,10 @@ class TransportFactory {
 		const cwd = newWorkDir(dirs.tmp);
 		try {
 			const config = await loadNpmConfig(own, env, cwd);
-			return { transport: new Transport(own, config, env, dirs.tmp), config };
+			return {
+				transport: new Transport(own, config, env, dirs.tmp, this.#context.nodePath),
+				config,
+			};
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}

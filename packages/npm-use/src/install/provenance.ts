@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Agent, ProxyAgent, request, type Dispatcher } from 'undici';
 import { EXIT, NpmUseError } from '../errors.ts';
-import { provenanceMessage } from '../messages.ts';
+import { provenanceMessage, redactUrls } from '../messages.ts';
 import type { NpmConfigView } from './config.ts';
 
 /** What the attestation must say about this repository's release workflow (spec SUP-2). */
@@ -55,8 +55,13 @@ export function attestationUrl(
 		url.search = '';
 	}
 	url.hash = '';
-	if (url.origin !== base.origin || url.username !== '' || url.password !== '') {
-		throw new Error(`attestation URL ${url.href} leaves the registry origin ${base.origin}`);
+	// Credentials travel in the Authorization header, never inline in the URL.
+	url.username = '';
+	url.password = '';
+	if (url.origin !== base.origin) {
+		throw new Error(
+			`attestation URL ${redactUrls(url.href)} leaves the registry origin ${base.origin}`,
+		);
 	}
 	return url;
 }
@@ -208,13 +213,17 @@ export async function verifyProvenance(
 	try {
 		url = attestationUrl(input, input.config.registry);
 	} catch (error) {
-		throw failure(name, version, `bad attestation URL: ${(error as Error).message}`);
+		throw failure(name, version, `bad attestation URL: ${redactUrls((error as Error).message)}`);
 	}
 	let attestations: Attestation[];
 	try {
 		attestations = await (deps.fetch ?? fetchAttestations)(url, input.config);
 	} catch (error) {
-		throw failure(name, version, `cannot fetch attestations: ${(error as Error).message}`);
+		throw failure(
+			name,
+			version,
+			`cannot fetch attestations: ${redactUrls((error as Error).message)}`,
+		);
 	}
 	const provenance = attestations.find((item) => item.predicateType === SLSA_PREDICATE);
 	if (provenance === undefined) {

@@ -161,3 +161,14 @@ export function shimAbi(content: string): number | null {
 export function shimDir(home: string): string {
 	return join(home, SHIM_DIR);
 }
+
+/** Our `.ps1` shims left from a permissive policy; PowerShell would still prefer them over `.cmd` (WIN-2). */
+export function stalePowershellShims(home: string): string[] {
+	return SELECTORS.map((name) => join(shimDir(home), `${name}.ps1`)).filter((file) => {
+		try {
+			return shimAbi(readFileSync(file, 'utf8')) !== null;
+		} catch {
+			return false;
+		}
+	});
+}

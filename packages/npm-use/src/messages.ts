@@ -2,6 +2,11 @@ import type { NpmSpec } from './spec.ts';
 
 /** Message builders for spec section 12; every message names the cause and one fix. */
 
+/** Every URL in `text` with its user info replaced, so a registry token never reaches a terminal (spec SEC-10). */
+export function redactUrls(text: string): string {
+	return text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)([^\s/@]+)@/gi, '$1***@');
+}
+
 export function describeSpecs(specs: readonly NpmSpec[]): string {
 	return specs
 		.map((spec) =>
@@ -42,7 +47,7 @@ export function keyMessage(keyid: string): string {
 
 export function unsignedMessage(registry: string, version: string): string {
 	return [
-		`${registry} serves npm ${version} without a registry signature.`,
+		`${redactUrls(registry)} serves npm ${version} without a registry signature.`,
 		`Pin a tarball hash in devEngines.packageManager (\`${version}+sha512.<hex>\`) to allow unsigned registries.`,
 	].join('\n');
 }
