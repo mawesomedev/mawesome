@@ -253,6 +253,8 @@ export async function safeExtract(
 		await done;
 		await Promise.all(writes);
 	} catch (error) {
+		// Let in-flight file writes settle, so the caller can remove the destination at once.
+		await Promise.allSettled(writes);
 		throw (
 			aborted ??
 			(error instanceof NpmUseError
