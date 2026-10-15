@@ -64,3 +64,32 @@ export function abiMessage(detail: string): string {
 		`Run \`npx --prefix ~ -y @mawesome/npm-use setup\` to reinstall the launchers.`,
 	].join('\n');
 }
+
+export interface LockHolder {
+	pid: number;
+	host: string;
+	createdAt: string;
+}
+
+/** M-LOCKED: names the file, the holder, and the one recovery that is safe for where the holder runs. */
+export function lockedMessage(
+	path: string,
+	holder: LockHolder | null,
+	live: boolean,
+	foreign: boolean,
+): string {
+	if (holder === null) {
+		return `${path} is locked by an unreadable owner. If no npm-use command is running, delete that file and retry.`;
+	}
+	const who = `PID ${holder.pid} on ${holder.host} since ${holder.createdAt || 'an unknown time'}`;
+	if (foreign) {
+		return [
+			`${path} is locked by ${who}, which cannot be verified from this machine.`,
+			`Confirm on ${holder.host} that no npm-use command runs, then delete ${path} and retry.`,
+		].join('\n');
+	}
+	if (live) {
+		return `${path} is locked by ${who}, which is still running. Wait for it to finish and retry.`;
+	}
+	return `${path} is locked by ${who}, which is no longer running. Delete ${path} and retry.`;
+}

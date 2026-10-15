@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { EXIT, isNpmUseError } from './errors.ts';
+import { lockedMessage } from './messages.ts';
 import { resolveNpmWith, type ResolveProviders } from './index.ts';
 import type { Installer } from './install/index.ts';
 import { findOwnNpm } from './own-npm.ts';
@@ -40,9 +41,41 @@ export async function main(
 	}
 }
 
+/**
+ * Finishes journals left by a crashed command before anything else runs (spec RUN-2, MUT-2).
+ * The lock is tried once without waiting: npm must never wait on a setup, and `current` is always runnable.
+ */
+async function recoverLeftovers(home: string): Promise<void> {
+	const { resolveDirs } = await import('./setup/home.ts');
+	const { hasJournals, recoverDeadJournals } = await import('./state/journal.ts');
+	const { lockOwnerLive, readLock, tryLock } = await import('./state/lock.ts');
+	const { ownerRecord } = await import('./state/lease.ts');
+	const dirs = resolveDirs(process.env, home);
+	if (!hasJournals(dirs.journal)) {
+		return;
+	}
+	const owner = ownerRecord(dirs.machine.id);
+	const lock = tryLock(dirs.state, owner);
+	if (lock === null) {
+		const holder = readLock(dirs.state);
+		if (!lockOwnerLive(holder, dirs.machine.id)) {
+			process.stderr.write(
+				`npm-use: ${lockedMessage(join(dirs.state, 'lock'), holder, false, false)}\n`,
+			);
+		}
+		return;
+	}
+	try {
+		recoverDeadJournals(dirs.journal, dirs.machine.id);
+	} finally {
+		lock.release();
+	}
+}
+
 /** Resolves and runs npm or npx for the current directory (spec RUN-3 to RUN-7). */
 async function launch(selector: 'npm' | 'npx', argv: string[], home: string): Promise<number> {
 	const env = process.env;
+	await recoverLeftovers(home);
 	let installer: Promise<Installer> | null = null;
 	// The install layer is a lazy chunk: a project satisfied by Node's own npm never parses it.
 	const lazy = (): Promise<Installer> => {

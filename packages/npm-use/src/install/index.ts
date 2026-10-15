@@ -7,7 +7,8 @@ import { findOwnNpm, type OwnNpm } from '../own-npm.ts';
 import type { ResolveProviders } from '../index.ts';
 import type { Candidate, Selection } from '../select.ts';
 import type { NpmSpec } from '../spec.ts';
-import { createLease, ownerRecord, type Lease } from '../state/lease.ts';
+import { acquireShared, ownerRecord, type Lease } from '../state/lease.ts';
+import { touchUsed } from '../state/prune.ts';
 import { resolveDirs, type Dirs } from '../setup/home.ts';
 import { canonicalEntry, listEntries, publishEntry, validateEntry } from './cache.ts';
 import { loadNpmConfig, type NpmConfigView } from './config.ts';
@@ -114,7 +115,13 @@ export function createInstaller(context: InstallContext): Installer {
 			const { candidate } = selection;
 			const owner = ownerRecord(context.dirs.machine.id);
 			if (candidate.entryPath !== null && validateEntry(candidate.entryPath, candidate.integrity)) {
-				return { entryPath: candidate.entryPath, lease: createLease(candidate.entryPath, owner) };
+				const lease = await acquireShared(candidate.entryPath, owner);
+				// A live prune gate means the entry is on its way out; fetch a private copy instead of waiting.
+				if (lease !== null && validateEntry(candidate.entryPath, candidate.integrity)) {
+					touchUsed(candidate.entryPath);
+					return { entryPath: candidate.entryPath, lease };
+				}
+				lease?.release();
 			}
 			const { transport, config } = await factory.get();
 			const published = (await transport.view(candidate.version)).find(

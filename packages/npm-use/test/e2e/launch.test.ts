@@ -1,8 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import semver from 'semver';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { installedNodes, installHome, runLauncher, startLauncher } from '../helpers/launcher.ts';
+import { deadOwner } from '../helpers/owners.ts';
+import { sha256 } from '../../src/state/meta.ts';
 import { createHarness, type Harness } from '../helpers/registry-harness.ts';
 import { makeTree, manifest, removeTrees } from '../helpers/tree.ts';
 
@@ -153,6 +155,74 @@ describe('launcher', { timeout: 120_000 }, () => {
 		h.registry.publish('13.0.0');
 		const run = await runLauncher(h.home, ['npm', '--argv1'], { cwd: h.project, env: h.env });
 		expect(run.stdout.trim()).toMatch(/\/npm\/13\.0\.0-[0-9a-f]{16}\/bin\/npm-cli\.js$/);
+	});
+});
+
+describe('leftover state', { timeout: 60_000 }, () => {
+	it("finishes a crashed command's journal before npm runs, and never deletes a dead owner's lock", async () => {
+		const h = await start({});
+		const dead = await deadOwner(h.context.dirs.machine.id);
+		const journalDir = h.context.dirs.journal;
+		mkdirSync(journalDir, { recursive: true });
+		const target = join(h.home, 'state', 'profiles.json');
+		writeFileSync(join(journalDir, 'home-0123456789abcdef.new'), '{"fixed":true}');
+		writeFileSync(
+			join(journalDir, 'home-0123456789abcdef.json'),
+			JSON.stringify({
+				id: 'home-0123456789abcdef',
+				kind: 'home',
+				owner: dead,
+				target,
+				original: {
+					type: 'missing',
+					mode: 0,
+					sha256: null,
+					encoding: null,
+					lineEndings: null,
+					symlinkTarget: null,
+				},
+				intended: sha256('{"fixed":true}'),
+				staged: join(journalDir, 'home-0123456789abcdef.new'),
+				backup: null,
+				mode: 0o644,
+				createdAt: 'now',
+			}),
+		);
+		const run = await runLauncher(h.home, ['npm', '-v'], { cwd: h.project, env: h.env });
+		expect(run.status).toBe(0);
+		expect(run.stderr).toBe('');
+		expect(readFileSync(target, 'utf8')).toBe('{"fixed":true}');
+		expect(existsSync(join(journalDir, 'home-0123456789abcdef.json'))).toBe(false);
+
+		writeFileSync(
+			join(journalDir, 'home-fedcba9876543210.json'),
+			JSON.stringify({
+				id: 'home-fedcba9876543210',
+				kind: 'home',
+				owner: dead,
+				target,
+				original: {
+					type: 'missing',
+					mode: 0,
+					sha256: null,
+					encoding: null,
+					lineEndings: null,
+					symlinkTarget: null,
+				},
+				intended: null,
+				staged: null,
+				backup: null,
+				mode: 0o644,
+				createdAt: 'now',
+			}),
+		);
+		writeFileSync(join(h.home, 'state', 'lock'), JSON.stringify({ ...dead, token: 'crashed' }));
+		const locked = await runLauncher(h.home, ['npm', '-v'], { cwd: h.project, env: h.env });
+		expect(locked.status).toBe(0);
+		expect(locked.stdout.trim()).toBe(ownVersion);
+		expect(locked.stderr).toMatch(/no longer running\. Delete .*lock and retry/);
+		expect(existsSync(join(h.home, 'state', 'lock'))).toBe(true);
+		expect(existsSync(join(journalDir, 'home-fedcba9876543210.json'))).toBe(true);
 	});
 });
 
