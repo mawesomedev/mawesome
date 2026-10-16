@@ -48,7 +48,8 @@ class MemoryCache implements CacheStore {
 function parseOutputs(text: string): Record<string, string> {
 	const outputs: Record<string, string> = {};
 	const pattern = /^([^<\n]+)<<(\S+)\n([\s\S]*?)\n\2$/gm;
-	for (const match of text.matchAll(pattern)) {
+	// @actions/core writes the file with os.EOL, so on Windows every line ends in CRLF.
+	for (const match of text.replace(/\r\n/g, '\n').matchAll(pattern)) {
 		outputs[match[1] as string] = match[3] as string;
 	}
 	return outputs;

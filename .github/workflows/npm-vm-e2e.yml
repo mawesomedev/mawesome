@@ -57,7 +57,8 @@ jobs:
           if [ ! -s "$NVM_DIR/nvm.sh" ]; then
             curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | PROFILE=/dev/null bash
           fi
-          . "$NVM_DIR/nvm.sh"
+          # Without --no-use, nvm.sh exits 3 under `set -e` when no default alias exists yet.
+          . "$NVM_DIR/nvm.sh" --no-use
           nvm install 22.9.0
           nvm install 20
           # fnm installs into FNM_DIR; the suite reads the same variable, so set it before installing.
