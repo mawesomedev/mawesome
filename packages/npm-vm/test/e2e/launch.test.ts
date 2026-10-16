@@ -313,7 +313,8 @@ describe('other Node versions', { timeout: 120_000 }, () => {
 		(node) => semver.gte(node.version, '22.9.0') && semver.lt(node.version, '23.0.0'),
 	);
 
-	it.runIf(process.env['NPM_VM_E2E_MANAGERS'] === '1')(
+	// nvm-windows provisions no line below the floor; the POSIX runners do.
+	it.runIf(process.env['NPM_VM_E2E_MANAGERS'] === '1' && process.platform !== 'win32')(
 		'CI provisions Node lines below the floor, so the launcher contract is exercised',
 		() => {
 			expect(below.map((node) => node.version)).not.toEqual([]);

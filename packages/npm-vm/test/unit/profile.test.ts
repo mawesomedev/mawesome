@@ -1,3 +1,4 @@
+import { shellBinary } from '../../src/state/proc.ts';
 import {
 	chmodSync,
 	existsSync,
@@ -46,7 +47,13 @@ describe('profileTargets', () => {
 		]);
 		const fish = profileTargets(['fish'], {}, 'linux', home);
 		expect(fish[0]?.file).toBe(join(home, '.config', 'fish', 'conf.d', 'npm-vm.fish'));
-		expect(profileTargets(['powershell'], { PATH: '/nonexistent' }, 'linux', home)).toEqual([]);
+		// pwsh is found through the system dirs, never PATH: present or not, the answer never depends on PATH.
+		const pwsh = profileTargets(['powershell'], { PATH: '/nonexistent' }, 'linux', home);
+		expect(pwsh).toEqual(
+			shellBinary('powershell', {}, 'linux') === null
+				? []
+				: [expect.objectContaining({ shell: 'powershell' })],
+		);
 	});
 });
 
