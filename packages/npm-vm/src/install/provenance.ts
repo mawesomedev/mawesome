@@ -191,21 +191,12 @@ export const verifyBundle: BundleVerifier = async (bundle, options) => {
 	const dir = mkdtempSync(join(options.tufCachePath, 'bundle-'));
 	const file = join(dir, 'bundle.json');
 	writeFileSync(file, JSON.stringify(bundle), { mode: 0o600 });
-	const env = childEnv(options.config, options.env, dir);
-	const [entry, ...prefix] = selfCommand();
+	const { args, env } = verifierLaunch(file, options, dir);
 	try {
 		await new Promise<void>((resolve, reject) => {
 			execFile(
 				process.execPath,
-				[
-					entry as string,
-					...prefix,
-					'verify-attestation',
-					'--bundle',
-					file,
-					'--tuf-cache',
-					options.tufCachePath,
-				],
+				args,
 				{ env, encoding: 'utf8', timeout: 300_000, windowsHide: true },
 				(error, stdout, stderr) => {
 					if (error === null) {
@@ -224,6 +215,27 @@ export const verifyBundle: BundleVerifier = async (bundle, options) => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 };
+
+/** The verifier child's argv and env for one bundle file; `dir` is private to this run and holds any CA bundle. */
+export function verifierLaunch(
+	file: string,
+	options: Parameters<BundleVerifier>[1],
+	dir: string,
+): { args: string[]; env: NodeJS.ProcessEnv } {
+	const [entry, ...prefix] = selfCommand();
+	return {
+		args: [
+			entry as string,
+			...prefix,
+			'verify-attestation',
+			'--bundle',
+			file,
+			'--tuf-cache',
+			options.tufCachePath,
+		],
+		env: childEnv(options.config, options.env, dir),
+	};
+}
 
 const PROXY_KEYS = /^(https?_proxy|all_proxy|no_proxy|proxy|node_extra_ca_certs|node_options)$/i;
 

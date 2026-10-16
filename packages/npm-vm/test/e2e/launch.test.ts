@@ -317,7 +317,9 @@ describe('other Node versions', { timeout: 120_000 }, () => {
 	it.runIf(process.env['NPM_VM_E2E_MANAGERS'] === '1' && process.platform !== 'win32')(
 		'CI provisions Node lines below the floor, so the launcher contract is exercised',
 		() => {
-			expect(below.map((node) => node.version)).not.toEqual([]);
+			expect(below.map((node) => semver.major(node.version))).toEqual(
+				expect.arrayContaining([16, 18, 20]),
+			);
 		},
 	);
 

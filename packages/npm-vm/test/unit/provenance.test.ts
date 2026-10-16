@@ -9,6 +9,7 @@ import {
 	identityPattern,
 	noProxyMatches,
 	tlsOptions,
+	verifierLaunch,
 } from '../../src/install/provenance.ts';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -115,6 +116,24 @@ describe('attestationUrl', () => {
 		expect(childEnv({ ...config, ca: ['X'], cafile: '/ca.pem' }, {})['NODE_EXTRA_CA_CERTS']).toBe(
 			'/ca.pem',
 		);
+	});
+
+	it('launches the verifier child with the private bundle dir', () => {
+		const dir = makeTree({});
+		const launch = verifierLaunch(
+			join(dir, 'bundle.json'),
+			{ tufCachePath: '/tuf', config: { ...config, ca: ['INLINE'] }, env: { https_proxy: 'x' } },
+			dir,
+		);
+		expect(launch.args.slice(-5)).toEqual([
+			'verify-attestation',
+			'--bundle',
+			join(dir, 'bundle.json'),
+			'--tuf-cache',
+			'/tuf',
+		]);
+		expect(launch.env['NODE_EXTRA_CA_CERTS']).toBe(join(dir, 'ca-bundle.pem'));
+		expect(launch.env['https_proxy']).toBeUndefined();
 	});
 
 	it('turns a malformed advertised URL into M-PROVENANCE', async () => {

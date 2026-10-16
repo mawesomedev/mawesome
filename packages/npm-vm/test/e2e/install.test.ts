@@ -79,8 +79,10 @@ describe('download, verify and cache', { timeout: 120_000 }, () => {
 		if (result.selection === null) {
 			throw new Error(`expected a selection, got ${result.kind}`);
 		}
+		// The context shares this env object, so ensure sees the variable the way the runtime does.
+		h.env['NPM_VM_OFFLINE'] = '1';
 		const requests = h.registry.requests.length;
-		await expect(h.installer.ensure(result.selection, { offline: true })).rejects.toMatchObject({
+		await expect(h.installer.ensure(result.selection)).rejects.toMatchObject({
 			id: 'M-NOMATCH',
 			exitCode: 3,
 		});

@@ -2,14 +2,16 @@ import { createHash } from 'node:crypto';
 import {
 	chmodSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildTarball, type TarEntry } from '@mawesome/testing/registry/tar';
 import { SLSA_PREDICATE } from '../../src/install/provenance.ts';
@@ -103,13 +105,24 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 			readdirSync(join(h.root, 'user')).filter((name) => name.includes('npm-vm-backup')),
 		).toHaveLength(1);
 
+		// A shell planted first on PATH must never run: doctor finds shells through the system dirs only.
+		const planted = join(h.root, 'planted');
+		mkdirSync(planted);
+		writeFileSync(join(planted, 'zsh'), `#!/bin/sh\ntouch "${join(planted, 'ran')}"\n`, {
+			mode: 0o755,
+		});
 		const healthy = await command(['doctor', '--json'], {
 			home: h.home,
-			env: { ...env, SHELL: '/nonexistent/shell' },
+			env: {
+				...env,
+				SHELL: '/nonexistent/shell',
+				PATH: `${planted}${delimiter}${h.env['PATH'] ?? ''}`,
+			},
 			cwd: h.project,
 		});
 		expect(healthy.code, healthy.stdout).toBe(0);
 		expect(JSON.parse(healthy.stdout)).toMatchObject({ version: '0.0.0', problems: [] });
+		expect(existsSync(join(planted, 'ran'))).toBe(false);
 
 		writeFileSync(join(h.home, 'shims', 'npx'), '#!/bin/sh\nexit 1\n');
 		const sick = await command(['doctor', '--json'], {
@@ -145,6 +158,34 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		expect(readFileSync(zshrc, 'utf8')).toBe('eval "$(fnm env)"\nalias ll="ls -l"\n');
 		expect(readFileSync(join(h.root, 'user', '.zshenv'), 'utf8')).toContain('shims');
 	});
+
+	it.skipIf(process.platform === 'win32')(
+		'never replaces a profile swapped for a same-content symlink while its prompt was open',
+		async () => {
+			const h = await start({});
+			const zshrc = join(h.root, 'user', '.zshrc');
+			const real = join(h.root, 'user', 'real-zshrc');
+			writeFileSync(zshrc, 'eval "$(fnm env)"\n');
+			const env = { ...h.env, SHELL: '/bin/zsh', ZDOTDIR: join(h.root, 'user') };
+			const result = await command(['setup', ...SETUP, '--strict'], {
+				home: h.home,
+				env,
+				cwd: h.project,
+				answers: [true, true],
+				onQuestion: (question) => {
+					if (question.includes('.zshrc')) {
+						writeFileSync(real, 'eval "$(fnm env)"\n');
+						rmSync(zshrc);
+						symlinkSync(real, zshrc);
+					}
+				},
+			});
+			expect(result.code).toBe(2);
+			expect(result.stdout).toContain('changed while the prompt was open');
+			expect(lstatSync(zshrc).isSymbolicLink()).toBe(true);
+			expect(readFileSync(real, 'utf8')).toBe('eval "$(fnm env)"\n');
+		},
+	);
 
 	it('prints the snippet instead of editing a symlinked profile and reports it under --strict', async () => {
 		const h = await start({});

@@ -302,12 +302,14 @@ async function applyPlan(
 			return { file: target.file, outcome: 'declined' };
 		}
 	}
-	// The file may have changed while the prompt was open: plan again, and never write over what was not shown.
+	/* The file may have changed while the prompt was open: guard and plan again, and never write over what was not shown.
+	 * The guard runs again because a swap for a symlink keeps the content equal (spec SH-5). */
+	const guard = profileGuard(target.file, context.env, context.platform);
 	const fresh = planProfileEdit(target, dirs.home);
 	if (fresh === null) {
 		return { file: target.file, outcome: 'unchanged' };
 	}
-	if (fresh.before !== plan.edit.before && !options.yes) {
+	if (guard !== null || (fresh.before !== plan.edit.before && !options.yes)) {
 		io.out(
 			`${target.file} changed while the prompt was open; run setup again to review the new change.`,
 		);
