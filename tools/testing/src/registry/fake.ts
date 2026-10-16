@@ -44,7 +44,7 @@ export class FakeRegistry {
 	readonly privateKey: KeyObject;
 	readonly publicKey: KeyObject;
 	readonly keyid: string;
-	/** SPKI DER, base64, as the keys endpoint and the npm-use keyring hold it. */
+	/** SPKI DER, base64, as the keys endpoint and the npm-vm keyring hold it. */
 	readonly publicKeyBase64: string;
 	readonly requests: RecordedRequest[] = [];
 	/** When set, requests without this bearer token get a 401. */

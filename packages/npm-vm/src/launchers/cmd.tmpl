@@ -1,0 +1,2 @@
+@rem npm-vm launcher abi={{ABI}}
+@for %%i in (node.exe) do @if "%%~$PATH:i"=="" (echo npm-vm: node.exe is not on PATH 1>&2 & exit /b 1) else @"%%~$PATH:i" "{{BOOTSTRAP}}" {{SELECTOR}} %*

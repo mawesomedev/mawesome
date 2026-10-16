@@ -147,9 +147,9 @@ jobs:
       - name: Lint the consumer workflow template
         run: node actions/pr-baseline/scripts/lint-workflow-template.ts
 
-  # The npm-use action: the bundle builds and runs the way the runner would, without a registry it fails cleanly.
-  npm-use-action:
-    name: npm-use action
+  # The npm-vm action: the bundle builds and runs the way the runner would, without a registry it fails cleanly.
+  npm-vm-action:
+    name: npm-vm action
     runs-on: ubuntu-latest
     steps:
       - name: Harden runner
@@ -170,14 +170,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build the action bundle
-        run: pnpm --filter '@mawesome/npm-use-action...' build
+        run: pnpm --filter '@mawesome/npm-vm-action...' build
       # Runs the bundle as the runner would, in a project satisfied by Node's own npm: no registry needed.
       - name: Smoke-test the bundle
         env:
           INPUT_CACHE: 'false'
-          'INPUT_WORKING-DIRECTORY': packages/npm-use/test/fixtures/smoke
+          'INPUT_WORKING-DIRECTORY': packages/npm-vm/test/fixtures/smoke
         run: |
-          mkdir -p packages/npm-use/test/fixtures/smoke
-          printf '{"name":"smoke","devEngines":{"packageManager":{"name":"npm","version":">=8"}}}\n' > packages/npm-use/test/fixtures/smoke/package.json
-          node actions/npm-use/dist/index.js
+          mkdir -p packages/npm-vm/test/fixtures/smoke
+          printf '{"name":"smoke","devEngines":{"packageManager":{"name":"npm","version":">=8"}}}\n' > packages/npm-vm/test/fixtures/smoke/package.json
+          node actions/npm-vm/dist/index.js
           grep -q '^kind<<' "$GITHUB_OUTPUT"

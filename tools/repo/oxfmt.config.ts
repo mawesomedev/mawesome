@@ -9,7 +9,7 @@ export default defineConfig({
 	overrides: [
 		{
 			// The launcher is ES5 (runs on Node 10), where a trailing comma in a call is a syntax error.
-			files: ['**/packages/npm-use/src/bootstrap.cjs'],
+			files: ['**/packages/npm-vm/src/bootstrap.cjs'],
 			options: { trailingComma: 'none' },
 		},
 	],

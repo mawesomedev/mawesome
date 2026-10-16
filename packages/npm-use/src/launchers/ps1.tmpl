@@ -1,5 +1,0 @@
-# npm-use launcher abi={{ABI}}
-$node = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $node) { [Console]::Error.WriteLine('npm-use: node.exe is not on PATH'); exit 1 }
-& $node.Source '{{BOOTSTRAP}}' {{SELECTOR}} @args
-exit $LASTEXITCODE

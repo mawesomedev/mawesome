@@ -1,0 +1,42 @@
+{
+	"name": "@mawesome/npm-vm-action",
+	"version": "0.0.0",
+	"private": true,
+	"description": "GitHub Action that runs the npm version a project declares in devEngines, cached between runs",
+	"license": "MIT",
+	"author": "Manzoor Ahmad Wani",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/mawesomedev/mawesome.git",
+		"directory": "actions/npm-vm"
+	},
+	"type": "module",
+	"scripts": {
+		"build": "tsdown",
+		"typecheck": "tsgo",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@actions/cache": "^6.3.0",
+		"@actions/core": "^3.0.1",
+		"@mawesome/npm-vm": "workspace:*"
+	},
+	"devDependencies": {
+		"@mawesome/testing": "workspace:*",
+		"@mawesome/tsconfig": "workspace:*",
+		"@types/node": "^26.4.1",
+		"@typescript/native-preview": "7.0.0-dev.20260527.2",
+		"rollup-plugin-license": "^3.7.1",
+		"tsdown": "^0.23.0",
+		"vitest": "^5.0.0"
+	},
+	"mirror": {
+		"repo": "mawesomedev/npm-vm-action",
+		"files": [
+			"action.yml",
+			"LICENSE",
+			"README.md",
+			"dist"
+		]
+	}
+}

@@ -1,0 +1,80 @@
+name: npm-vm e2e
+
+# The release gate of packages/npm-vm (spec section 14): the launcher and its shell hooks against real
+# Node managers on every OS. The suite skips the manager scenarios whose tool is not installed.
+on:
+  pull_request:
+    paths:
+      - 'packages/npm-vm/**'
+      - 'actions/npm-vm/**'
+      - 'tools/testing/**'
+      - '.github/workflows/npm-vm-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-vm-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Harden runner
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm --filter '@mawesome/npm-vm-action...' build
+      # nvm and fnm on POSIX; extra Node lines so the launcher runs below the floor and on it.
+      - name: Install nvm and fnm
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          export NVM_DIR="$HOME/.nvm"
+          git clone --quiet --depth 1 --branch v0.40.3 https://github.com/nvm-sh/nvm.git "$NVM_DIR"
+          . "$NVM_DIR/nvm.sh"
+          nvm install 22.9.0 >/dev/null
+          nvm install 20 >/dev/null
+          curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir "$HOME/.fnm"
+          "$HOME/.fnm/fnm" install 22 >/dev/null
+          "$HOME/.fnm/fnm" install 24 >/dev/null
+          echo "FNM_DIR=$HOME/.local/share/fnm" >> "$GITHUB_ENV"
+          echo "$HOME/.fnm" >> "$GITHUB_PATH"
+      - name: Install nvm-windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nvm --no-progress -y
+          "NVM_HOME=$env:ProgramData\nvm" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Run the npm-vm suite
+        shell: bash
+        working-directory: packages/npm-vm
+        env:
+          NPM_VM_E2E_MANAGERS: '1'
+        run: node_modules/.bin/vitest run
+      - name: Run the action suite
+        shell: bash
+        working-directory: actions/npm-vm
+        run: node_modules/.bin/vitest run

@@ -217,7 +217,7 @@ importers:
         specifier: ^3.0.2
         version: 3.0.2
 
-  actions/npm-use:
+  actions/npm-vm:
     dependencies:
       '@actions/cache':
         specifier: ^6.3.0
@@ -225,9 +225,9 @@ importers:
       '@actions/core':
         specifier: ^3.0.1
         version: 3.0.1
-      '@mawesome/npm-use':
+      '@mawesome/npm-vm':
         specifier: workspace:*
-        version: link:../../packages/npm-use
+        version: link:../../packages/npm-vm
     devDependencies:
       '@mawesome/testing':
         specifier: workspace:*
@@ -290,12 +290,12 @@ importers:
       '@mawesome/dependency-audit':
         specifier: workspace:*
         version: link:../../packages/dependency-audit
-      '@mawesome/npm-use':
+      '@mawesome/npm-vm':
         specifier: workspace:*
-        version: link:../../packages/npm-use
-      '@mawesome/npm-use-action':
+        version: link:../../packages/npm-vm
+      '@mawesome/npm-vm-action':
         specifier: workspace:*
-        version: link:../../actions/npm-use
+        version: link:../../actions/npm-vm
       '@mawesome/pr-baseline':
         specifier: workspace:*
         version: link:../../packages/pr-baseline
@@ -365,7 +365,7 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0(@types/node@26.4.1)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.1)(yaml@2.9.0))
 
-  packages/npm-use:
+  packages/npm-vm:
     dependencies:
       '@npmcli/config':
         specifier: ^10.14.0
