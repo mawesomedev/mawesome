@@ -18,7 +18,11 @@ function patternOf(path: string): string {
 
 /** Adds `shims/` to the front of PATH when absent; sourcing it twice changes nothing (spec SH-1). */
 function shimsFor(shell: Shell, home: string): string {
-	return shell === 'powershell' ? win32.join(home, SHIM_DIR) : shimDir(home);
+	if (shell === 'powershell') {
+		return win32.join(home, SHIM_DIR);
+	}
+	// POSIX shells on Windows (Git Bash, MSYS) take forward slashes; a backslash would escape.
+	return process.platform === 'win32' ? shimDir(home).replace(/\\/g, '/') : shimDir(home);
 }
 
 export function pathSnippet(shell: Shell, home: string): string {

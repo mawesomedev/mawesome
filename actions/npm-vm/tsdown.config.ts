@@ -21,6 +21,8 @@ const config: UserConfig = defineConfig({
 	sourcemap: true,
 	dts: false,
 	deps: { alwaysBundle: [/.*/] },
+	// The runtime the launcher loads ships beside the bundle, since the mirror holds only `dist`.
+	copy: [{ from: '../../packages/npm-vm/dist/runtime', to: 'dist' }],
 	plugins: [license({ thirdParty: { output: 'dist/licenses.txt' } })],
 });
 

@@ -66,6 +66,14 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		PREFIX: join(root, 'prefix'),
 		XDG_CACHE_HOME: join(root, 'cache'),
 		NPM_VM_HOME: join(root, 'home'),
+		// Windows ignores the XDG variables; without these the tests would share the real cache and profiles.
+		...(process.platform === 'win32'
+			? {
+					LOCALAPPDATA: join(root, 'cache'),
+					USERPROFILE: join(root, 'user'),
+					APPDATA: join(root, 'user'),
+				}
+			: {}),
 		...options.env,
 	};
 	mkdirSync(join(root, 'home', 'state'), { recursive: true });

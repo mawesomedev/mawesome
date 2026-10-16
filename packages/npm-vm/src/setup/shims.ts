@@ -57,7 +57,9 @@ export function templatesDir(): string {
 export type TemplateKind = 'sh' | 'cmd' | 'ps1';
 
 export function readTemplate(dir: string, kind: TemplateKind): string {
-	return readFileSync(join(dir, `${kind}.tmpl`), 'utf8');
+	// cmd and ps1 keep their CRLF; an autocrlf checkout must not hand the sh shim CRLF.
+	const text = readFileSync(join(dir, `${kind}.tmpl`), 'utf8');
+	return kind === 'sh' ? text.replace(/\r\n/g, '\n') : text;
 }
 
 /** Fills one launcher template; the ABI comes from the launcher generation the templates belong to. */

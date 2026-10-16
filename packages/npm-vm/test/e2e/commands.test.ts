@@ -23,12 +23,22 @@ afterEach(async () => {
 	removeTrees();
 });
 
+const WIN = process.platform === 'win32';
+/* Windows would default to PowerShell and the registry PATH; these tests target the zsh files under HOME and leave the registry alone. */
+const SETUP = WIN ? ['--shell', 'zsh', '--no-user-path'] : [];
+
 async function start(
 	...args: Parameters<typeof createHarness>
 ): Promise<Harness & { home: string }> {
 	const harness = await createHarness(...args);
 	open.push(harness);
-	return { ...harness, home: harness.context.dirs.home };
+	const home = harness.context.dirs.home;
+	if (WIN) {
+		// doctor asks cmd and PowerShell what PATH resolves; the shims must already be first there.
+		const key = Object.keys(harness.env).find((name) => name.toLowerCase() === 'path') ?? 'Path';
+		harness.env[key] = `${join(home, 'shims')};${harness.env[key] ?? ''}`;
+	}
+	return { ...harness, home };
 }
 
 const npm = { name: 'npm' };
@@ -39,12 +49,16 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		writeFileSync(join(h.root, 'user', '.zshrc'), 'eval "$(fnm env)"\n');
 		const env = { ...h.env, SHELL: '/bin/zsh', ZDOTDIR: join(h.root, 'user') };
 		rmSync(h.home, { recursive: true, force: true });
-		const dry = await command(['setup', '--dry-run'], { home: h.home, env, cwd: h.project });
+		const dry = await command(['setup', ...SETUP, '--dry-run'], {
+			home: h.home,
+			env,
+			cwd: h.project,
+		});
 		expect(dry.code).toBe(0);
 		expect(existsSync(h.home)).toBe(false);
 		expect(readFileSync(join(h.root, 'user', '.zshrc'), 'utf8')).not.toContain('npm-vm');
 
-		const declined = await command(['setup'], {
+		const declined = await command(['setup', ...SETUP], {
 			home: h.home,
 			env,
 			cwd: h.project,
@@ -55,11 +69,11 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		expect(declined.stdout).toContain('Add this yourself');
 		expect(readFileSync(join(h.root, 'user', '.zshrc'), 'utf8')).not.toContain('npm-vm');
 		expect(existsSync(join(h.home, 'shims', 'npm'))).toBe(true);
-		expect((await command(['setup', '--strict'], { home: h.home, env, cwd: h.project })).code).toBe(
-			2,
-		);
+		expect(
+			(await command(['setup', ...SETUP, '--strict'], { home: h.home, env, cwd: h.project })).code,
+		).toBe(2);
 
-		const yes = await command(['setup', '--yes'], { home: h.home, env, cwd: h.project });
+		const yes = await command(['setup', ...SETUP, '--yes'], { home: h.home, env, cwd: h.project });
 		expect(yes.code).toBe(0);
 		expect(readFileSync(join(h.root, 'user', '.zshrc'), 'utf8')).toContain('_npm_vm_guard');
 		expect(readFileSync(join(h.root, 'user', '.zshenv'), 'utf8')).toContain('shims');
@@ -67,7 +81,7 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		const launched = await runLauncher(h.home, ['npm', '-v'], { cwd: h.project, env });
 		expect(launched.status).toBe(0);
 
-		const again = await command(['setup', '--yes', '--json'], {
+		const again = await command(['setup', ...SETUP, '--yes', '--json'], {
 			home: h.home,
 			env,
 			cwd: h.project,
@@ -110,7 +124,7 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		const { symlinkSync } = await import('node:fs');
 		symlinkSync(join(h.root, 'user', 'real-zshrc'), join(h.root, 'user', '.zshrc'));
 		const env = { ...h.env, SHELL: '/bin/zsh', ZDOTDIR: join(h.root, 'user') };
-		const result = await command(['setup', '--yes', '--strict'], {
+		const result = await command(['setup', ...SETUP, '--yes', '--strict'], {
 			home: h.home,
 			env,
 			cwd: h.project,
@@ -128,11 +142,14 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		writeFileSync(join(bin, 'npm'), '#!/bin/sh\necho original npm\n');
 		writeFileSync(join(bin, 'npx'), '#!/bin/sh\necho original npx\n');
 		const env = { ...h.env, NVM_DIR: nvmDir, SHELL: '/bin/zsh', ZDOTDIR: join(h.root, 'user') };
-		const result = await command(['setup', '--link', '--yes', '--no-modify-profile', '--json'], {
-			home: h.home,
-			env,
-			cwd: h.project,
-		});
+		const result = await command(
+			['setup', ...SETUP, '--link', '--yes', '--no-modify-profile', '--json'],
+			{
+				home: h.home,
+				env,
+				cwd: h.project,
+			},
+		);
 		expect(result.code).toBe(0);
 		expect(readFileSync(join(bin, 'npm'), 'utf8')).toContain('bootstrap.cjs');
 		expect(readFileSync(join(bin, 'npm.npm-vm-original'), 'utf8')).toContain('original npm');
@@ -354,7 +371,7 @@ function attestationFor(version: string, tarball: Buffer): unknown {
 
 async function updateContext(h: Harness & { home: string }) {
 	installHome(h.home);
-	await command(['setup', '--yes', '--no-modify-profile'], {
+	await command(['setup', ...SETUP, '--yes', '--no-modify-profile'], {
 		home: h.home,
 		env: h.env,
 		cwd: h.project,

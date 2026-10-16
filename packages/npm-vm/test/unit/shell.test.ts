@@ -19,12 +19,17 @@ interface PosixShell {
 }
 
 const candidates: PosixShell[] = [
-	{ name: 'zsh', bin: 'zsh', kind: 'zsh' },
+	{ name: 'zsh', bin: '/bin/zsh', kind: 'zsh' },
+	{ name: 'zsh', bin: '/usr/bin/zsh', kind: 'zsh' },
 	{ name: 'bash 3.2', bin: '/bin/bash', kind: 'bash' },
 	{ name: 'bash 5', bin: '/opt/homebrew/bin/bash', kind: 'bash' },
 	{ name: 'bash', bin: '/usr/bin/bash', kind: 'bash' },
 ];
-const shells = candidates.filter((shell) => shell.bin === 'zsh' || existsSync(shell.bin));
+// Only shells installed here run; a Linux runner has no zsh and Windows has none of these.
+const installed = candidates.filter((shell) => existsSync(shell.bin));
+const shells = installed.filter(
+	(shell, index) => installed.findIndex((other) => other.name === shell.name) === index,
+);
 
 function runShell(shell: PosixShell, script: string, path: string): string {
 	const args =

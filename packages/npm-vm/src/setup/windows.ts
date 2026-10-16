@@ -136,6 +136,7 @@ export function windowsWinners(
 			['npm'],
 			{
 				encoding: 'utf8',
+				env,
 				windowsHide: true,
 				stdio: ['ignore', 'pipe', 'ignore'],
 			},

@@ -62,6 +62,7 @@ export function powershellProfile(
 			['-NoProfile', '-NonInteractive', '-Command', '$PROFILE.CurrentUserAllHosts'],
 			{
 				encoding: 'utf8',
+				env,
 				windowsHide: true,
 				stdio: ['ignore', 'pipe', 'ignore'],
 			},

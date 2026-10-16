@@ -1,0 +1,4 @@
+# The shims are rendered from these templates: sh must stay LF, cmd and ps1 keep CRLF, whatever the checkout's autocrlf.
+packages/npm-vm/src/launchers/sh.tmpl text eol=lf
+packages/npm-vm/src/launchers/cmd.tmpl text eol=crlf
+packages/npm-vm/src/launchers/ps1.tmpl text eol=crlf

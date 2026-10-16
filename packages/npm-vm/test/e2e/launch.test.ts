@@ -154,7 +154,9 @@ describe('launcher', { timeout: 120_000 }, () => {
 		const h = await start({ devEngines: { packageManager: { ...npm, version: '13.0.0' } } });
 		h.registry.publish('13.0.0');
 		const run = await runLauncher(h.home, ['npm', '--argv1'], { cwd: h.project, env: h.env });
-		expect(run.stdout.trim()).toMatch(/\/npm\/13\.0\.0-[0-9a-f]{16}\/bin\/npm-cli\.js$/);
+		expect(run.stdout.trim().replace(/\\/g, '/')).toMatch(
+			/\/npm\/13\.0\.0-[0-9a-f]{16}\/bin\/npm-cli\.js$/,
+		);
 	});
 });
 

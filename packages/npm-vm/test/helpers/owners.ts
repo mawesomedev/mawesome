@@ -58,12 +58,17 @@ export async function suspendedOwner(
 		pid: child.pid as number,
 		start: startIdentity(child.pid as number),
 	});
-	child.kill('SIGSTOP');
+	// Windows has no SIGSTOP; the child simply stays live there, which the assertions still require.
+	if (process.platform !== 'win32') {
+		child.kill('SIGSTOP');
+	}
 	return { owner, child };
 }
 
 export async function stop(child: ChildProcess): Promise<void> {
-	child.kill('SIGCONT');
+	if (process.platform !== 'win32') {
+		child.kill('SIGCONT');
+	}
 	child.kill('SIGKILL');
 	await waitExit(child);
 }
