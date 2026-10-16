@@ -13,7 +13,7 @@ const define = { NPM_VM_BUILD_VERSION: JSON.stringify(version) };
  */
 const config: UserConfig[] = defineConfig([
 	{
-		entry: ['src/index.ts'],
+		entry: ['src/index.ts', 'src/internal.ts'],
 		format: ['esm', 'cjs'],
 		dts: true,
 		fixedExtension: false,

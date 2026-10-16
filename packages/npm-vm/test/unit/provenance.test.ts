@@ -10,6 +10,7 @@ import {
 	noProxyMatches,
 	tlsOptions,
 } from '../../src/install/provenance.ts';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTree } from '../helpers/tree.ts';
 
@@ -97,6 +98,23 @@ describe('attestationUrl', () => {
 			NODE_EXTRA_CA_CERTS: '/ca.pem',
 		});
 		expect(childEnv(config, { ALL_PROXY: 'z' })).toEqual({});
+	});
+
+	it('bundles inline ca certificates with the cafile for the child', () => {
+		const dir = makeTree({ 'ca.pem': 'FILE-CERT\n' });
+		const env = childEnv(
+			{ ...config, ca: ['INLINE-ONE', 'INLINE-TWO'], cafile: join(dir, 'ca.pem') },
+			{},
+			dir,
+		);
+		expect(env['NODE_EXTRA_CA_CERTS']).toBe(join(dir, 'ca-bundle.pem'));
+		expect(readFileSync(join(dir, 'ca-bundle.pem'), 'utf8')).toBe(
+			'INLINE-ONE\nINLINE-TWO\nFILE-CERT\n',
+		);
+		// Without a bundle dir the inline certificates cannot be passed; the cafile still is.
+		expect(childEnv({ ...config, ca: ['X'], cafile: '/ca.pem' }, {})['NODE_EXTRA_CA_CERTS']).toBe(
+			'/ca.pem',
+		);
 	});
 
 	it('turns a malformed advertised URL into M-PROVENANCE', async () => {

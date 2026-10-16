@@ -15,17 +15,10 @@ import {
 	type ParsedSpecs,
 } from './spec.ts';
 
+// The public API is `resolveNpm` and what it returns (spec section 3.1); everything else lives in `./internal`.
 export type { NpmSpec, OnFail, ParsedSpecs } from './spec.ts';
 export type { Candidate, Selection } from './select.ts';
-export { selectCandidate, sriHex } from './select.ts';
-export { parseSpecs, parseVersionSpec, SpecError } from './spec.ts';
-export { findProject } from './project.ts';
 export { EXIT, isNpmVmError, NpmVmError } from './errors.ts';
-export { createContext, createInstaller } from './install/index.ts';
-export type { EnsureOptions, InstallContext, Installer, PackedSource } from './install/index.ts';
-export { run as runCommand } from './commands/dispatch.ts';
-export type { CommandIo } from './commands/context.ts';
-export type { DispatchOptions } from './commands/dispatch.ts';
 
 export interface ResolveSource {
 	file: string;

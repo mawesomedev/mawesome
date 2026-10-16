@@ -17,8 +17,8 @@ import {
 	type Candidate,
 	type NpmSpec,
 	type ResolveResult,
-} from '@mawesome/npm-vm';
-import type { PackedSource } from '@mawesome/npm-vm';
+} from '@mawesome/npm-vm/internal';
+import type { PackedSource } from '@mawesome/npm-vm/internal';
 
 /** Bumped whenever the cached artifact's layout changes, so an old cache never restores (spec ACT-3). */
 const SCHEMA = 1;

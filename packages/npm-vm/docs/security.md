@@ -26,7 +26,7 @@ Node's own npm (8 or newer) is the transport. It runs in a private directory und
 
 ## Helper processes
 
-Node is always `process.execPath`. Every other helper (`ps`, `ioreg`, `reg.exe`, PowerShell) is spawned by absolute path with a sanitised environment, because inside an npm script `PATH` starts with `node_modules/.bin`, which any dependency can populate without running an install script. PowerShell always runs with `-NoProfile -NonInteractive`.
+Node is always `process.execPath`. Every other helper (`ps`, `ioreg`, `reg.exe`, PowerShell, and the shells `doctor` asks) is spawned by absolute path with a sanitised environment, because inside an npm script `PATH` starts with `node_modules/.bin`, which any dependency can populate without running an install script. A shell is looked up through `$SHELL` or the system directories only. PowerShell always runs with `-NoProfile -NonInteractive`.
 
 ## Self-update
 

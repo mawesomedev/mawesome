@@ -20,6 +20,7 @@ import {
 	writeLinks,
 } from '../../src/setup/link.ts';
 import { ownerRecord } from '../../src/state/lease.ts';
+import { captureMeta } from '../../src/state/meta.ts';
 import { makeTree, removeTrees } from '../helpers/tree.ts';
 
 afterEach(removeTrees);
@@ -146,6 +147,26 @@ describe('link and unlink', () => {
 		expect(unlinkOne(dirs, owner, readLinks(dirs).entries[0]!)).toBe('restored');
 		expect(lstatSync(join(binDir, 'npm')).isSymbolicLink()).toBe(true);
 		expect(existsSync(join(binDir, 'npm.npm-vm-original'))).toBe(false);
+	});
+
+	it('repairs a record left at "missing" by a crash between writing the shim and recording it', () => {
+		const root = makeTree({ home: {} });
+		const nvmDir = fakeNvm(root, ['24.0.0']);
+		const dirs = resolveDirs({}, join(root, 'home'), 'linux', { id: 'm', fallback: false });
+		const binDir = join(nvmDir, 'versions', 'node', 'v24.0.0', 'bin');
+		const [npm] = linkTargets(join(root, 'home'), 'linux', true);
+		expect(linkOne(dirs, owner, binDir, npm!).outcome).toBe('linked');
+		const links = readLinks(dirs);
+		const [entry] = links.entries;
+		writeLinks(dirs, {
+			...links,
+			entries: [{ ...entry!, shim: captureMeta(join(binDir, 'nothing-here')) }],
+		});
+		expect(linkState(readLinks(dirs).entries[0]!)).toBe('changed');
+		expect(linkOne(dirs, owner, binDir, npm!).outcome).toBe('already');
+		expect(readLinks(dirs).entries[0]!.shim.type).toBe('file');
+		expect(linkState(readLinks(dirs).entries[0]!)).toBe('intact');
+		expect(unlinkOne(dirs, owner, readLinks(dirs).entries[0]!)).toBe('restored');
 	});
 
 	it('moves a blocked .ps1 aside and puts it back on unlink', () => {

@@ -121,6 +121,8 @@ export interface PackedSource {
 export interface EnsureOptions {
 	/** Called with the verified tarball before it is extracted, so a caller can keep a copy (the Action's cache). */
 	onPacked?: (source: PackedSource, digests: Digests) => Promise<void>;
+	/** Never contact the registry; defaults to `NPM_VM_OFFLINE` in the context env. */
+	offline?: boolean;
 }
 
 export interface Installer extends ResolveProviders {
@@ -233,6 +235,14 @@ export function createInstaller(context: InstallContext): Installer {
 					return { entryPath: candidate.entryPath, lease };
 				}
 				lease?.release();
+			}
+			// Offline means offline even when the cached entry turned out unusable (spec RES-7).
+			if (options.offline ?? (context.env['NPM_VM_OFFLINE'] ?? '') !== '') {
+				throw new NpmVmError(
+					'M-NOMATCH',
+					EXIT.resolution,
+					`npm ${candidate.version} is not usable from the cache and NPM_VM_OFFLINE forbids the registry.`,
+				);
 			}
 			const { transport, config } = await factory.get();
 			const published = (await transport.view(candidate.version)).find(

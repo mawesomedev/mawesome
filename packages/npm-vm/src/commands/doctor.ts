@@ -5,6 +5,7 @@ import { EXIT } from '../errors.ts';
 import { findProject } from '../project.ts';
 import { listJournals } from '../state/journal.ts';
 import { lockOwnerLive, lockPath, readLock } from '../state/lock.ts';
+import { shellBinary } from '../state/proc.ts';
 import { findNodeInstalls, linkState, readLinks } from '../setup/link.ts';
 import { BOOTSTRAP_FILE, readCurrent, readManifest, versionDir } from '../setup/layout.ts';
 import { readProfiles } from '../setup/profile.ts';
@@ -30,7 +31,10 @@ const PROBE_TIMEOUT_MS = 5000;
 
 /** The `npm` an interactive login shell resolves, by asking that shell (its profiles decide the PATH). */
 function shellWinner(shell: Shell, env: NodeJS.ProcessEnv): string | null {
-	const bin = shell === 'powershell' ? 'pwsh' : shell;
+	const bin = shellBinary(shell, env);
+	if (bin === null) {
+		return null;
+	}
 	/* `-c` never reaches a prompt, so the hooks run by hand first: on macOS, /etc/zprofile reorders PATH after .zshenv. */
 	const args =
 		shell === 'fish'
@@ -56,7 +60,6 @@ function shellWinner(shell: Shell, env: NodeJS.ProcessEnv): string | null {
 	}
 }
 
-/** What `command -v npm` printed: an alias or a function wins over PATH, so no PATH fix can help. */
 /** A Windows path for comparison: `where` answers with the long name, the home may carry an 8.3 short name. */
 function canonical(path: string): string {
 	try {
@@ -66,6 +69,7 @@ function canonical(path: string): string {
 	}
 }
 
+/** What `command -v npm` printed: an alias or a function wins over PATH, so no PATH fix can help. */
 export function winnerKind(winner: string): 'alias' | 'function' | 'path' {
 	if (winner.startsWith('alias ')) {
 		return 'alias';

@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { basename, isAbsolute, join } from 'node:path';
 
 /** A process plus the start identity that tells it apart from a later process reusing its PID (spec PROC-1). */
 export interface ProcessIdentity {
@@ -17,6 +17,30 @@ export function powershellPath(env: NodeJS.ProcessEnv = process.env): string {
 		'v1.0',
 		'powershell.exe',
 	);
+}
+
+const SHELL_DIRS = ['/bin', '/usr/bin', '/usr/local/bin', '/opt/homebrew/bin', '/snap/bin'];
+
+/**
+ * An absolute path for a shell to probe (spec SEC-8): the login shell when `$SHELL` is absolute, else system dirs.
+ * Never PATH, which inside an npm script starts with `node_modules/.bin`.
+ */
+export function shellBinary(
+	shell: 'zsh' | 'bash' | 'fish' | 'powershell',
+	env: NodeJS.ProcessEnv = process.env,
+	platform: NodeJS.Platform = process.platform,
+): string | null {
+	const name = shell === 'powershell' ? 'pwsh' : shell;
+	if (platform === 'win32') {
+		const pwsh = join(env['ProgramFiles'] ?? 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe');
+		return shell === 'powershell' && existsSync(pwsh) ? pwsh : null;
+	}
+	const login = env['SHELL'];
+	const candidates = [
+		...(login !== undefined && isAbsolute(login) && basename(login) === name ? [login] : []),
+		...SHELL_DIRS.map((dir) => join(dir, name)),
+	];
+	return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
 /** The start identity of `pid`, or null when the lookup fails or is ambiguous. */

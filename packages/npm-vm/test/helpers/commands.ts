@@ -11,7 +11,14 @@ export interface CommandRun {
 /** Runs an npm-vm command in-process with captured output and scripted answers. */
 export async function command(
 	argv: string[],
-	options: { home: string; env: NodeJS.ProcessEnv; cwd?: string; answers?: boolean[] },
+	options: {
+		home: string;
+		env: NodeJS.ProcessEnv;
+		cwd?: string;
+		answers?: boolean[];
+		/** Runs while a prompt is open, before its answer: what a user does meanwhile. */
+		onQuestion?: (question: string) => void;
+	},
 ): Promise<CommandRun> {
 	const result: CommandRun = { code: -1, stdout: '', stderr: '', questions: [] };
 	const answers = [...(options.answers ?? [])];
@@ -25,6 +32,7 @@ export async function command(
 		interactive: answers.length > 0,
 		async confirm(question) {
 			result.questions.push(question);
+			options.onQuestion?.(question);
 			return answers.shift() ?? false;
 		},
 	};

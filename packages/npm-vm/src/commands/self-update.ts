@@ -268,6 +268,16 @@ async function update(context: CommandContext, deps: SelfUpdateDeps): Promise<nu
 				),
 			);
 		}
+		// The launcher is swapped before `current`: one older than the installed runtime would break every shim meanwhile.
+		if (candidateAbi < installedRuntimeAbi) {
+			throw new NpmVmError(
+				'M-ABI',
+				EXIT.abi,
+				abiMessage(
+					`npm-vm ${latest.version} ships launcher ABI ${candidateAbi}, older than the installed runtime's ${installedRuntimeAbi}`,
+				),
+			);
+		}
 		const target = installVersion(dirs.home, latest.version, runtimeSource, candidateAbi);
 		const health = await run(join(target, BOOTSTRAP_FILE), ['--candidate', 'cli', '--version']);
 		if (health.code !== 0 || health.stdout.trim() !== latest.version) {

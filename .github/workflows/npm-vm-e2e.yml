@@ -60,7 +60,10 @@ jobs:
           # Without --no-use, nvm.sh exits 3 under `set -e` when no default alias exists yet.
           . "$NVM_DIR/nvm.sh" --no-use
           nvm install 22.9.0
+          # Below the floor the launcher must hand over to Node's own npm; the suite checks every line present.
           nvm install 20
+          nvm install 18
+          nvm install 16
           # fnm installs into FNM_DIR; the suite reads the same variable, so set it before installing.
           export FNM_DIR="$HOME/.local/share/fnm"
           # On macOS the script defaults to Homebrew and ignores --install-dir; --force-no-brew keeps one path.

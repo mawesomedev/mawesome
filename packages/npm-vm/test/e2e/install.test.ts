@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FakeRegistry } from '@mawesome/testing/registry';
@@ -67,6 +67,24 @@ describe('download, verify and cache', { timeout: 120_000 }, () => {
 		h.registry.publish('13.0.0');
 		await expect(h.resolve()).rejects.toMatchObject({ id: 'M-NOMATCH', exitCode: 3 });
 		expect(h.registry.requests).toHaveLength(0);
+	});
+
+	it('stays offline when the cached entry turns out unusable', async () => {
+		const h = await start({ devEngines: { packageManager: { ...npm, version: '13.0.0' } } });
+		h.registry.publish('13.0.0');
+		const { entryPath } = await h.run();
+		// The marker gone, the entry fails validation; offline, that must not become a download.
+		rmSync(join(entryPath, '.verified'), { force: true });
+		const result = await h.resolve();
+		if (result.selection === null) {
+			throw new Error(`expected a selection, got ${result.kind}`);
+		}
+		const requests = h.registry.requests.length;
+		await expect(h.installer.ensure(result.selection, { offline: true })).rejects.toMatchObject({
+			id: 'M-NOMATCH',
+			exitCode: 3,
+		});
+		expect(h.registry.requests.length).toBe(requests);
 	});
 
 	it('rejects a tarball whose bytes differ from the registry integrity', async () => {

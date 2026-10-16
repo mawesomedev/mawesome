@@ -128,6 +128,24 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		expect(existsSync(h.context.dirs.cache)).toBe(true);
 	});
 
+	it('never writes over a profile edited while its prompt was open', async () => {
+		const h = await start({});
+		const zshrc = join(h.root, 'user', '.zshrc');
+		writeFileSync(zshrc, 'eval "$(fnm env)"\n');
+		const env = { ...h.env, SHELL: '/bin/zsh', ZDOTDIR: join(h.root, 'user') };
+		const result = await command(['setup', ...SETUP, '--strict'], {
+			home: h.home,
+			env,
+			cwd: h.project,
+			answers: [true, true],
+			onQuestion: () => writeFileSync(zshrc, 'eval "$(fnm env)"\nalias ll="ls -l"\n'),
+		});
+		expect(result.code).toBe(2);
+		expect(result.stdout).toContain('changed while the prompt was open');
+		expect(readFileSync(zshrc, 'utf8')).toBe('eval "$(fnm env)"\nalias ll="ls -l"\n');
+		expect(readFileSync(join(h.root, 'user', '.zshenv'), 'utf8')).toContain('shims');
+	});
+
 	it('prints the snippet instead of editing a symlinked profile and reports it under --strict', async () => {
 		const h = await start({});
 		writeFileSync(join(h.root, 'user', 'real-zshrc'), '');
@@ -530,6 +548,16 @@ describe('self-update', { timeout: 120_000 }, () => {
 				await runLauncher(h.home, ['cli', '--version'], { cwd: h.project, env: h.env })
 			).stdout.trim(),
 		).toBe('0.4.0');
+		// A newer version shipping an older launcher would break every shim between the two swaps: refused.
+		const older = releaseTarball('0.4.1', 1);
+		h.registry.publishPackage('@mawesome/npm-vm', '0.4.1', {
+			tarball: older,
+			attestations: [attestationFor('0.4.1', older)],
+		});
+		await expect(
+			selfUpdate(ctx, { rollback: false }, { verifyBundle: async () => undefined }),
+		).rejects.toMatchObject({ id: 'M-ABI', exitCode: 6 });
+		expect(readCurrent(h.home)).toBe('0.4.0');
 		expect(await selfUpdate(ctx, { rollback: true })).toBe(0);
 		expect(readFileSync(join(h.home, 'shims', 'npm'), 'utf8')).toContain('abi=1');
 		expect(

@@ -260,6 +260,9 @@ export function linkOne(
 				shim: current,
 				linkedAt: new Date().toISOString(),
 			});
+		} else if (known.shim.type === 'missing') {
+			// A crash between writing the shim and recording it: the file is ours, the record catches up.
+			record(dirs, { ...known, shim: current, linkedAt: new Date().toISOString() });
 		}
 		return { target: path, outcome: 'already' };
 	}

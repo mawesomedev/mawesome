@@ -313,6 +313,13 @@ describe('other Node versions', { timeout: 120_000 }, () => {
 		(node) => semver.gte(node.version, '22.9.0') && semver.lt(node.version, '23.0.0'),
 	);
 
+	it.runIf(process.env['NPM_VM_E2E_MANAGERS'] === '1')(
+		'CI provisions Node lines below the floor, so the launcher contract is exercised',
+		() => {
+			expect(below.map((node) => node.version)).not.toEqual([]);
+		},
+	);
+
 	it.skipIf(below.length === 0)(
 		"below the floor runs Node's own npm and warns only when the project declares npm",
 		async () => {

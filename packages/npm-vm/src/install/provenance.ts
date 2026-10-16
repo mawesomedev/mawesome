@@ -191,7 +191,7 @@ export const verifyBundle: BundleVerifier = async (bundle, options) => {
 	const dir = mkdtempSync(join(options.tufCachePath, 'bundle-'));
 	const file = join(dir, 'bundle.json');
 	writeFileSync(file, JSON.stringify(bundle), { mode: 0o600 });
-	const env = childEnv(options.config, options.env);
+	const env = childEnv(options.config, options.env, dir);
 	const [entry, ...prefix] = selfCommand();
 	try {
 		await new Promise<void>((resolve, reject) => {
@@ -228,7 +228,11 @@ export const verifyBundle: BundleVerifier = async (bundle, options) => {
 const PROXY_KEYS = /^(https?_proxy|all_proxy|no_proxy|proxy|node_extra_ca_certs|node_options)$/i;
 
 /** The child's env: the parent's minus every proxy and Node override, plus only what the npm config says. */
-export function childEnv(config: NpmConfigView, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function childEnv(
+	config: NpmConfigView,
+	env: NodeJS.ProcessEnv,
+	bundleDir: string | null = null,
+): NodeJS.ProcessEnv {
 	const child: NodeJS.ProcessEnv = {};
 	for (const [key, value] of Object.entries(env)) {
 		if (!PROXY_KEYS.test(key) && !/^npm_config_/i.test(key)) {
@@ -245,7 +249,16 @@ export function childEnv(config: NpmConfigView, env: NodeJS.ProcessEnv): NodeJS.
 	if (config.noproxy !== null) {
 		child['no_proxy'] = config.noproxy;
 	}
-	if (config.cafile !== null) {
+	// Inline `ca` has no file for NODE_EXTRA_CA_CERTS to point at; the child gets a private bundle of both.
+	if (config.ca !== null && config.ca.length > 0 && bundleDir !== null) {
+		const bundle = join(bundleDir, 'ca-bundle.pem');
+		const parts = [...config.ca];
+		if (config.cafile !== null) {
+			parts.push(readFileSync(config.cafile, 'utf8'));
+		}
+		writeFileSync(bundle, `${parts.map((part) => part.trim()).join('\n')}\n`, { mode: 0o600 });
+		child['NODE_EXTRA_CA_CERTS'] = bundle;
+	} else if (config.cafile !== null) {
 		child['NODE_EXTRA_CA_CERTS'] = config.cafile;
 	}
 	return child;

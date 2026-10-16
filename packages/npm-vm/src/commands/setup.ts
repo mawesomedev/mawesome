@@ -53,7 +53,7 @@ export interface SetupReport {
 	version: string;
 	profiles: Array<{
 		file: string;
-		outcome: 'written' | 'unchanged' | 'printed' | 'declined' | 'dry-run';
+		outcome: 'written' | 'unchanged' | 'printed' | 'declined' | 'changed' | 'dry-run';
 		reason?: string;
 	}>;
 	links: LinkResult[];
@@ -217,8 +217,10 @@ export async function setup(context: CommandContext, options: SetupOptions): Pro
 		lock?.release();
 	}
 	report.skipped =
-		report.profiles.filter((entry) => entry.outcome === 'printed' || entry.outcome === 'declined')
-			.length +
+		report.profiles.filter(
+			(entry) =>
+				entry.outcome === 'printed' || entry.outcome === 'declined' || entry.outcome === 'changed',
+		).length +
 		report.links.filter((link) => ['foreign', 'unwritable', 'missing'].includes(link.outcome))
 			.length;
 	if (context.json) {
@@ -300,7 +302,18 @@ async function applyPlan(
 			return { file: target.file, outcome: 'declined' };
 		}
 	}
-	applyProfileEdit(dirs, context.owner, plan.edit);
+	// The file may have changed while the prompt was open: plan again, and never write over what was not shown.
+	const fresh = planProfileEdit(target, dirs.home);
+	if (fresh === null) {
+		return { file: target.file, outcome: 'unchanged' };
+	}
+	if (fresh.before !== plan.edit.before && !options.yes) {
+		io.out(
+			`${target.file} changed while the prompt was open; run setup again to review the new change.`,
+		);
+		return { file: target.file, outcome: 'changed' };
+	}
+	applyProfileEdit(dirs, context.owner, fresh);
 	return { file: target.file, outcome: 'written' };
 }
 

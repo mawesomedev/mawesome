@@ -6,7 +6,7 @@ import { atomicWrite } from '../state/atomic.ts';
 import { mutateFile } from '../state/journal.ts';
 import type { OwnerRecord } from '../state/lease.ts';
 import { captureMeta, sha256 } from '../state/meta.ts';
-import { powershellPath } from '../state/proc.ts';
+import { powershellPath, shellBinary } from '../state/proc.ts';
 import type { Dirs } from './home.ts';
 import { BLOCK_END, BLOCK_START, profileBlock, type Shell } from './shell.ts';
 
@@ -55,7 +55,10 @@ export function powershellProfile(
 	host: 'powershell' | 'pwsh',
 	env: NodeJS.ProcessEnv,
 ): string | null {
-	const bin = host === 'powershell' ? powershellPath(env) : 'pwsh';
+	const bin = host === 'powershell' ? powershellPath(env) : shellBinary('powershell', env);
+	if (bin === null) {
+		return null;
+	}
 	try {
 		const out = execFileSync(
 			bin,
