@@ -31,12 +31,15 @@ const PROBE_TIMEOUT_MS = 5000;
 /** The `npm` an interactive login shell resolves, by asking that shell (its profiles decide the PATH). */
 function shellWinner(shell: Shell, env: NodeJS.ProcessEnv): string | null {
 	const bin = shell === 'powershell' ? 'pwsh' : shell;
+	/* `-c` never reaches a prompt, so the hooks run by hand first: on macOS, /etc/zprofile reorders PATH after .zshenv. */
 	const args =
 		shell === 'fish'
-			? ['-l', '-i', '-c', 'command -v npm']
+			? ['-l', '-i', '-c', 'emit fish_prompt; command -v npm']
 			: shell === 'powershell'
 				? ['-NoProfile', '-Command', '(Get-Command npm).Source']
-				: ['-l', '-i', '-c', 'command -v npm'];
+				: shell === 'zsh'
+					? ['-l', '-i', '-c', 'for f in $precmd_functions; do "$f"; done; command -v npm']
+					: ['-l', '-i', '-c', 'eval "$PROMPT_COMMAND"; command -v npm'];
 	try {
 		const out = execFileSync(bin, args, {
 			encoding: 'utf8',

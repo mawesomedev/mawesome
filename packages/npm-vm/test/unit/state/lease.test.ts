@@ -126,7 +126,8 @@ describe('pruneEntry', () => {
 		mkdirSync(`${second}.deleting.0123456789abcdef`);
 		writeFileSync(join(`${second}.deleting.0123456789abcdef`, 'x'), '');
 		createGate(second, dead);
-		const report = pruneCache(root, liveOwner(), { maxAgeMs: 0 });
+		// A clock a minute ahead: with maxAgeMs 0 an entry stamped in the same millisecond is not yet stale.
+		const report = pruneCache(root, liveOwner(), { maxAgeMs: 0, now: Date.now() + 60_000 });
 		expect(report.removed).toContain(`${entryName('13.1.0', integrity)}.deleting.0123456789abcdef`);
 		expect(readdirSync(join(root, 'npm')).filter((name) => name.includes('13.1.0'))).toEqual([]);
 	});

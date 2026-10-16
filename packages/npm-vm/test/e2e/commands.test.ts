@@ -98,7 +98,7 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 			env: { ...env, SHELL: '/nonexistent/shell' },
 			cwd: h.project,
 		});
-		expect(healthy.code).toBe(0);
+		expect(healthy.code, healthy.stdout).toBe(0);
 		expect(JSON.parse(healthy.stdout)).toMatchObject({ version: '0.0.0', problems: [] });
 
 		writeFileSync(join(h.home, 'shims', 'npx'), '#!/bin/sh\nexit 1\n');
