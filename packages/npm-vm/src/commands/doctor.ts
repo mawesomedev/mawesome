@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { EXIT } from '../errors.ts';
 import { findProject } from '../project.ts';
@@ -136,8 +136,17 @@ export async function collect(context: CommandContext): Promise<DoctorReport> {
 	}
 	const shimsDir = shimDir(dirs.home);
 	if (platform === 'win32') {
+		// `where` answers with the long name; the home may be spelled with an 8.3 short name.
+		const canonical = (path: string): string => {
+			try {
+				return realpathSync.native(path).toLowerCase();
+			} catch {
+				return path.toLowerCase();
+			}
+		};
+		const shimsCanonical = canonical(shimsDir);
 		for (const winner of windowsWinners(env)) {
-			if (winner.path === null || !winner.path.toLowerCase().startsWith(shimsDir.toLowerCase())) {
+			if (winner.path === null || !canonical(winner.path).startsWith(shimsCanonical)) {
 				problem(
 					'path',
 					`${winner.context} resolves npm to ${winner.path ?? 'nothing'}`,

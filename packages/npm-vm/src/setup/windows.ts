@@ -10,6 +10,7 @@ import { powershellPath } from '../state/proc.ts';
 function powershell(env: NodeJS.ProcessEnv, command: string): string {
 	return execFileSync(powershellPath(env), ['-NoProfile', '-NonInteractive', '-Command', command], {
 		encoding: 'utf8',
+		env,
 		windowsHide: true,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	}).trim();

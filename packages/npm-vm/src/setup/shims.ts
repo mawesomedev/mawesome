@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join, win32 } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import { EXIT, NpmVmError } from '../errors.ts';
 
 /** The launcher ABI the shims carry; a runtime declares the ABI it needs (spec RUN-2). */
@@ -79,9 +79,12 @@ export function posixShim(
 	name: ShimName,
 	templates: string = templatesDir(),
 	abi: number = SHIM_ABI,
+	platform: NodeJS.Platform = process.platform,
 ): string {
+	// Git Bash passes a backslash path through to node; everywhere else the shim must keep forward slashes.
+	const { join: joinPath } = platform === 'win32' ? win32 : posix;
 	return renderTemplate(readTemplate(templates, 'sh'), {
-		bootstrap: join(home, 'bootstrap.cjs'),
+		bootstrap: joinPath(home, 'bootstrap.cjs'),
 		selector: selectorOf(name),
 		abi,
 	});
@@ -135,7 +138,7 @@ export function renderShims(
 	const abi = options.abi ?? SHIM_ABI;
 	const files: ShimFile[] = [];
 	for (const name of SELECTORS) {
-		files.push({ name, content: posixShim(home, name, templates, abi), mode: 0o755 });
+		files.push({ name, content: posixShim(home, name, templates, abi, platform), mode: 0o755 });
 		if (platform === 'win32') {
 			files.push({
 				name: `${name}.cmd`,

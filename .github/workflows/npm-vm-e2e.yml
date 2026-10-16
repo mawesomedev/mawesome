@@ -53,17 +53,20 @@ jobs:
         shell: bash
         run: |
           export NVM_DIR="$HOME/.nvm"
-          # The hosted runners ship nvm already; clone only where they do not.
+          # The Linux runners ship nvm already; macOS does not, and a shallow clone of the tag fails there.
           if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-            git clone --quiet --depth 1 --branch v0.40.3 https://github.com/nvm-sh/nvm.git "$NVM_DIR"
+            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | PROFILE=/dev/null bash
           fi
           . "$NVM_DIR/nvm.sh"
           nvm install 22.9.0
           nvm install 20
+          # fnm installs into FNM_DIR; the suite reads the same variable, so set it before installing.
+          export FNM_DIR="$HOME/.local/share/fnm"
           curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir "$HOME/.fnm"
-          "$HOME/.fnm/fnm" install 22 >/dev/null
-          "$HOME/.fnm/fnm" install 24 >/dev/null
-          echo "FNM_DIR=$HOME/.local/share/fnm" >> "$GITHUB_ENV"
+          "$HOME/.fnm/fnm" install 22
+          "$HOME/.fnm/fnm" install 24
+          "$HOME/.fnm/fnm" ls
+          echo "FNM_DIR=$FNM_DIR" >> "$GITHUB_ENV"
           echo "$HOME/.fnm" >> "$GITHUB_PATH"
       - name: Install nvm-windows
         if: runner.os == 'Windows'
