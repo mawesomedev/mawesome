@@ -1,9 +1,12 @@
-import { rmSync } from 'node:fs';
+import { rmdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { atomicRename, removeWithRetry } from '../state/atomic.ts';
 import { EXIT } from '../errors.ts';
+import { ENTRIES_DIR, stagingDir } from '../install/cache.ts';
 import { changedMessage } from '../messages.ts';
 import { recoverDeadJournals } from '../state/journal.ts';
 import { acquireLock } from '../state/lock.ts';
+import { pruneCache } from '../state/prune.ts';
 import { readLinks, unlinkOne } from '../setup/link.ts';
 import { readProfiles, removeProfileBlock } from '../setup/profile.ts';
 import { shimDir } from '../setup/shims.ts';
@@ -20,6 +23,19 @@ export interface UninstallReport {
 	links: Array<{ target: string; outcome: string }>;
 	homeRemoved: boolean;
 	cacheRemoved: boolean;
+	/** Entries `--purge-cache` left because a running npm holds them. */
+	cacheKept: string[];
+}
+
+/** Removes the cache's directories only while empty: an npm publishing right now keeps its entry. */
+function removeEmptyTree(cache: string): void {
+	for (const dir of [join(cache, ENTRIES_DIR), stagingDir(cache), cache]) {
+		try {
+			rmdirSync(dir);
+		} catch {
+			// Not empty or already gone; either way it stays as it is.
+		}
+	}
 }
 
 export async function uninstall(
@@ -41,6 +57,7 @@ export async function uninstall(
 		links: [],
 		homeRemoved: false,
 		cacheRemoved: false,
+		cacheKept: [],
 	};
 	const lock = await acquireLock(dirs.state, context.owner);
 	let clean = true;
@@ -66,6 +83,20 @@ export async function uninstall(
 			removeFromUserPath(env, shimDir(dirs.home));
 			clearCmdAutoRun(env);
 		}
+		if (options.purgeCache) {
+			// Through the gate and lease protocol, under the lock: an npm still running keeps its entry.
+			const pruned = pruneCache(dirs.cache, context.owner, { maxAgeMs: 0 });
+			report.cacheKept = pruned.kept.concat(pruned.skipped);
+			if (report.cacheKept.length === 0) {
+				removeEmptyTree(dirs.cache);
+				report.cacheRemoved = true;
+			} else {
+				clean = false;
+				io.err(
+					`Cache kept: ${report.cacheKept.join(', ')} ${report.cacheKept.length === 1 ? 'is' : 'are'} in use by a running npm.`,
+				);
+			}
+		}
 		// Under the lock the home moves aside in one rename, so a setup that follows never writes into a dir being deleted.
 		const tombstone = `${dirs.home}.removing.${process.pid}.${Date.now()}`;
 		atomicRename(dirs.home, tombstone);
@@ -73,10 +104,6 @@ export async function uninstall(
 		report.homeRemoved = true;
 	} finally {
 		lock.release();
-	}
-	if (options.purgeCache) {
-		rmSync(dirs.cache, { recursive: true, force: true });
-		report.cacheRemoved = true;
 	}
 	io.out(context.json ? JSON.stringify(report, null, 2) : describe(report, dirs.cache));
 	return clean ? EXIT.ok : EXIT.problems;
@@ -90,10 +117,12 @@ function describe(report: UninstallReport, cache: string): string {
 	for (const link of report.links) {
 		lines.push(`  ${link.target}: ${link.outcome}`);
 	}
-	lines.push(
-		report.cacheRemoved
-			? `  cache removed (${cache})`
-			: `  cache kept at ${cache}; add --purge-cache to remove it`,
-	);
+	if (report.cacheRemoved) {
+		lines.push(`  cache removed (${cache})`);
+	} else if (report.cacheKept.length > 0) {
+		lines.push(`  cache kept at ${cache}: ${report.cacheKept.join(', ')} in use by a running npm`);
+	} else {
+		lines.push(`  cache kept at ${cache}; add --purge-cache to remove it`);
+	}
 	return lines.join('\n');
 }

@@ -1,11 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import semver from 'semver';
 import { EXIT, NpmVmError } from '../errors.ts';
 import { createContext, createInstaller } from '../install/index.ts';
 import { findProject } from '../project.ts';
 import { parseVersionSpec } from '../spec.ts';
-import { mutateFile } from '../state/journal.ts';
+import { mutateFile, recoverDeadJournals } from '../state/journal.ts';
+import { acquireLock } from '../state/lock.ts';
 import type { CommandContext } from './context.ts';
 
 /** The indentation and newline a JSON file uses, so the rewrite keeps its shape. */
@@ -109,25 +110,40 @@ export async function pin(
 	} catch (error) {
 		throw new NpmVmError('M-NOMATCH', EXIT.usage, (error as Error).message);
 	}
-	const text = readFileSync(file, 'utf8');
-	let pkg: Record<string, unknown>;
+	// The manifest is read and rewritten under the exclusive lock (spec MUT-1), like every other mutation.
+	const lock = await acquireLock(context.dirs.state, context.owner);
 	try {
-		pkg = JSON.parse(text) as Record<string, unknown>;
-	} catch (error) {
-		throw new NpmVmError(
-			'M-NOMATCH',
-			EXIT.usage,
-			`${file} is not valid JSON: ${(error as Error).message}`,
+		recoverDeadJournals(context.dirs.journal, context.dirs.machine.id);
+		const text = readFileSync(file, 'utf8');
+		let pkg: Record<string, unknown>;
+		try {
+			pkg = JSON.parse(text) as Record<string, unknown>;
+		} catch (error) {
+			throw new NpmVmError(
+				'M-NOMATCH',
+				EXIT.usage,
+				`${file} is not valid JSON: ${(error as Error).message}`,
+			);
+		}
+		const format = detectFormat(text);
+		const body = JSON.stringify(pinnedManifest(pkg, version), null, format.indent).replace(
+			/\n/g,
+			format.newline,
 		);
-	}
-	const format = detectFormat(text);
-	const body = JSON.stringify(pinnedManifest(pkg, version), null, format.indent).replace(
-		/\n/g,
-		format.newline,
-	);
-	const output = `${body}${format.trailingNewline ? format.newline : ''}`;
-	if (output !== text) {
-		mutateFile(context.dirs.journal, 'project', context.owner, file, Buffer.from(output, 'utf8'));
+		const output = `${body}${format.trailingNewline ? format.newline : ''}`;
+		if (output !== text) {
+			const mode = process.platform === 'win32' ? 0o644 : statSync(file).mode & 0o7777;
+			mutateFile(
+				context.dirs.journal,
+				'project',
+				context.owner,
+				file,
+				Buffer.from(output, 'utf8'),
+				mode,
+			);
+		}
+	} finally {
+		lock.release();
 	}
 	context.io.out(
 		context.json ? JSON.stringify({ file, version }) : `Pinned npm ${version} in ${file}`,

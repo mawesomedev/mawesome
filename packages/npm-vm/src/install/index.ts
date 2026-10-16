@@ -15,6 +15,7 @@ import {
 	canonicalEntry,
 	listEntries,
 	publishEntry,
+	stagingDir,
 	validateEntry,
 	type PublishedEntry,
 } from './cache.ts';
@@ -184,7 +185,8 @@ export function createInstaller(context: InstallContext): Installer {
 		if (onPacked !== undefined) {
 			await onPacked(source, digests);
 		}
-		const work = newWorkDir(context.dirs.tmp);
+		// Extracted on the cache's own filesystem: the final rename into the cache must not cross one (EXDEV).
+		const work = newWorkDir(stagingDir(context.dirs.cache));
 		try {
 			const extracted = join(work, 'package');
 			mkdirSync(extracted, { mode: 0o700 });

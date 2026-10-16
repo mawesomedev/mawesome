@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, renameSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { canonicalEntry, entryName } from '../../../src/install/cache.ts';
@@ -8,9 +8,11 @@ import {
 	createGate,
 	createLease,
 	gatePath,
+	leaseSurvived,
 	leasesDir,
 	listLeases,
 	removeGate,
+	type Lease,
 } from '../../../src/state/lease.ts';
 import {
 	lastUsed,
@@ -177,5 +179,19 @@ describe('pruneCache', () => {
 		expect(existsSync(fresh)).toBe(true);
 		expect(existsSync(held)).toBe(true);
 		lease.release();
+	});
+
+	it('leases again when a prune moved the leases dir away before the gate check', async () => {
+		const root = makeTree({});
+		const target = entry(root, '13.4.0');
+		const lease = createLease(target, liveOwner());
+		// What a prune does after its lease check: the whole leases dir goes, then the gate.
+		renameSync(leasesDir(target), `${target}.leases.deleting.0123456789abcdef`);
+		expect(leaseSurvived(lease)).toBe(false);
+		const again = await acquireShared(target, liveOwner());
+		expect(again).not.toBeNull();
+		expect(leaseSurvived(again as Lease)).toBe(true);
+		expect(listLeases(target)).toEqual([again?.path]);
+		again?.release();
 	});
 });

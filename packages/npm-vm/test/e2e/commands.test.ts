@@ -1,6 +1,15 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+	chmodSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildTarball, type TarEntry } from '@mawesome/testing/registry/tar';
 import { SLSA_PREDICATE } from '../../src/install/provenance.ts';
@@ -8,7 +17,8 @@ import { selfUpdate } from '../../src/commands/self-update.ts';
 import { createCommandContext } from '../../src/commands/context.ts';
 import { command } from '../helpers/commands.ts';
 import { DIST_RUNTIME, installHome, runLauncher } from '../helpers/launcher.ts';
-import { deadOwner } from '../helpers/owners.ts';
+import { deadOwner, liveOwner } from '../helpers/owners.ts';
+import { acquireLock } from '../../src/state/lock.ts';
 import { createHarness, type Harness } from '../helpers/registry-harness.ts';
 import { makeTree, manifest, removeTrees } from '../helpers/tree.ts';
 import { readCurrent, readPrevious } from '../../src/setup/layout.ts';
@@ -170,6 +180,54 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		expect(removed.code).toBe(1);
 		expect(readFileSync(join(bin, 'npm'), 'utf8')).toContain('original npm');
 		expect(readFileSync(join(bin, 'npx'), 'utf8')).toContain('replaced me');
+	});
+});
+
+describe('mutation safety', { timeout: 60_000 }, () => {
+	it('pin waits for the exclusive lock and keeps the manifest mode', async () => {
+		const h = await start({});
+		const file = join(h.project, 'package.json');
+		chmodSync(file, 0o600);
+		const held = await acquireLock(h.context.dirs.state, liveOwner());
+		let releasedAt = 0;
+		setTimeout(() => {
+			releasedAt = Date.now();
+			held.release();
+		}, 300);
+		const startedAt = Date.now();
+		const pinned = await command(['pin', '^12'], { home: h.home, env: h.env, cwd: h.project });
+		expect(pinned.code).toBe(0);
+		expect(releasedAt).toBeGreaterThan(startedAt);
+		expect(Date.now()).toBeGreaterThanOrEqual(releasedAt);
+		expect(JSON.parse(readFileSync(file, 'utf8')).devEngines.packageManager.version).toBe('^12');
+		if (process.platform !== 'win32') {
+			expect(statSync(file).mode & 0o777).toBe(0o600);
+		}
+	});
+
+	it('uninstall --purge-cache keeps an entry a running npm holds', async () => {
+		const h = await start({ devEngines: { packageManager: { ...npm, version: '13.0.0' } } });
+		h.registry.publish('13.0.0');
+		const result = await h.resolve();
+		if (result.selection === null) {
+			throw new Error(`expected a download, got ${result.kind}`);
+		}
+		const { entryPath, lease } = await h.installer.ensure(result.selection);
+		try {
+			const removed = await command(['uninstall', '--yes', '--purge-cache', '--json'], {
+				home: h.home,
+				env: h.env,
+				cwd: h.project,
+			});
+			expect(removed.code).toBe(1);
+			expect(JSON.parse(removed.stdout)).toMatchObject({
+				cacheRemoved: false,
+				cacheKept: [basename(entryPath)],
+			});
+			expect(existsSync(join(entryPath, 'bin', 'npm-cli.js'))).toBe(true);
+		} finally {
+			lease.release();
+		}
 	});
 });
 

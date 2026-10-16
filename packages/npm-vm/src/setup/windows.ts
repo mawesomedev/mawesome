@@ -79,10 +79,17 @@ export function autoRunCommand(shimsDir: string): string {
 	return `set "PATH=${shimsDir};%PATH%" & rem ${AUTORUN_MARK}`;
 }
 
+/** `value` without the fragment `autoRunCommand` generated, whatever home it named; the user's own commands stay. */
+export function withoutAutoRunCommand(value: string | null): string {
+	if (value === null) {
+		return '';
+	}
+	return value.replace(/^set "PATH=[^"]*;%PATH%" & rem npm-vm(?: & )?/, '').trim();
+}
+
 export function setCmdAutoRun(env: NodeJS.ProcessEnv, shimsDir: string): void {
-	const existing = readCmdAutoRun(env);
 	const ours = autoRunCommand(shimsDir);
-	const kept = existing === null || existing.includes(AUTORUN_MARK) ? '' : existing;
+	const kept = withoutAutoRunCommand(readCmdAutoRun(env));
 	const value = kept === '' ? ours : `${ours} & ${kept}`;
 	execFileSync(
 		regExe(env),
@@ -96,13 +103,10 @@ export function setCmdAutoRun(env: NodeJS.ProcessEnv, shimsDir: string): void {
 
 export function clearCmdAutoRun(env: NodeJS.ProcessEnv): boolean {
 	const existing = readCmdAutoRun(env);
-	if (existing === null || !existing.includes(AUTORUN_MARK)) {
+	if (existing === null || !existing.includes(`rem ${AUTORUN_MARK}`)) {
 		return false;
 	}
-	const rest = existing
-		.split(' & ')
-		.filter((part) => !part.includes(AUTORUN_MARK))
-		.join(' & ');
+	const rest = withoutAutoRunCommand(existing);
 	if (rest === '') {
 		execFileSync(regExe(env), ['delete', AUTORUN_KEY, '/v', 'AutoRun', '/f'], {
 			windowsHide: true,

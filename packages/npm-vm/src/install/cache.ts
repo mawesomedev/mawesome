@@ -4,6 +4,7 @@ import { sriHex, type Candidate } from '../select.ts';
 import {
 	createLease,
 	gatePath,
+	leaseSurvived,
 	newToken,
 	ownerLive,
 	type Lease,
@@ -21,6 +22,11 @@ export function entryName(version: string, integrity: string): string {
 		throw new Error(`not a sha512 integrity: ${integrity}`);
 	}
 	return `${version}-${hex.slice(0, 16)}`;
+}
+
+/** Where verified entries are staged before the rename into `npm/`: same filesystem, so the rename stays atomic. */
+export function stagingDir(cacheRoot: string): string {
+	return join(cacheRoot, 'staging');
 }
 
 export function canonicalEntry(cacheRoot: string, version: string, integrity: string): string {
@@ -144,6 +150,10 @@ export function publishEntry(
 	if (existsSync(gatePath(canonical)) && ownerLive(gatePath(canonical))) {
 		lease.release();
 		return publishPrivately(tempDir, canonical, owner);
+	}
+	if (!leaseSurvived(lease)) {
+		// A prune between the lease and the gate check moved the lease away with the old entry; the path is free now.
+		return publishEntry(tempDir, canonical, integrity, owner);
 	}
 	try {
 		renameSync(tempDir, canonical);

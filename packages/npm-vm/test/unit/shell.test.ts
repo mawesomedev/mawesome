@@ -56,6 +56,9 @@ describe('snippets', () => {
 		expect(hookSnippet('fish', HOME)).toContain('--on-event fish_prompt');
 		expect(pathSnippet('powershell', 'C:\\npm-vm')).toContain("'C:\\npm-vm\\shims'");
 		expect(hookSnippet('powershell', 'C:\\npm-vm')).toContain('$global:LASTEXITCODE = $exit');
+		// `$?` must be read before any assignment in the wrapper resets it.
+		const hook = hookSnippet('powershell', 'C:\\npm-vm');
+		expect(hook.indexOf('$ok = $?')).toBeLessThan(hook.indexOf('$exit = $global:LASTEXITCODE'));
 		expect(hookSnippet('powershell', 'C:\\npm-vm')).toContain('_npm_vm_original_prompt');
 		expect(hookSnippet('powershell', 'C:\\npm-vm')).toContain('if (-not $ok) { Write-Error');
 	});

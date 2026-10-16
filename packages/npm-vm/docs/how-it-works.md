@@ -57,7 +57,7 @@ A version is a semver range, an exact version, or an exact version with `+sha512
 
 ## The cache
 
-Verified releases live under `~/.cache/npm-vm/<machine-id>/npm/<version>-<integrity prefix>/` (`%LOCALAPPDATA%\npm-vm\cache\...` on Windows). The directory name carries the integrity, so two registries serving different bytes for the same version get two entries. Entries are write-once: a running `npm` holds a shared lease on its entry and `cache prune` is the only thing that ever deletes one, never while a lease is live. The machine id in the path keeps a home shared over NFS from mixing leases between machines.
+Verified releases live under `~/.cache/npm-vm/<machine-id>/npm/<version>-<integrity prefix>/` (`%LOCALAPPDATA%\npm-vm-cache\...` on Windows). The directory name carries the integrity, so two registries serving different bytes for the same version get two entries. Entries are write-once: a running `npm` holds a shared lease on its entry and `cache prune` is the only thing that ever deletes one, never while a lease is live. The machine id in the path keeps a home shared over NFS from mixing leases between machines.
 
 ```sh
 npm-vm cache list

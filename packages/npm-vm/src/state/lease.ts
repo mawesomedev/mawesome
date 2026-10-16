@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { isLive, ownIdentity, type ProcessIdentity } from './proc.ts';
@@ -62,21 +62,35 @@ export function ownerLive(file: string): boolean {
 /** Creates a shared lease on `entry`; the file name is unique, so a prune can never delete a live one by mistake. */
 export function createLease(entry: string, owner: OwnerRecord): Lease {
 	const dir = leasesDir(entry);
-	mkdirSync(dir, { recursive: true, mode: 0o700 });
-	const path = join(dir, newToken());
-	try {
-		writeFileSync(path, JSON.stringify(owner), { mode: 0o600, flag: 'wx' });
-	} catch (error) {
-		// An unreadable lease counts as live and would keep the entry forever.
-		rmSync(path, { force: true });
-		throw error;
-	}
-	return {
-		path,
-		release() {
+	for (let attempt = 0; ; attempt += 1) {
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const path = join(dir, newToken());
+		try {
+			writeFileSync(path, JSON.stringify(owner), { mode: 0o600, flag: 'wx' });
+		} catch (error) {
+			// An unreadable lease counts as live and would keep the entry forever.
 			rmSync(path, { force: true });
-		},
-	};
+			// A prune can move the leases dir away between the mkdir and the write; the next attempt recreates it.
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT' && attempt < 3) {
+				continue;
+			}
+			throw error;
+		}
+		return {
+			path,
+			release() {
+				rmSync(path, { force: true });
+			},
+		};
+	}
+}
+
+/**
+ * Whether a lease created before a gate check is still in place (spec LEASE-1).
+ * A prune that passed its own lease check first moves the whole leases dir away, taking the file with it.
+ */
+export function leaseSurvived(lease: Lease): boolean {
+	return existsSync(lease.path);
 }
 
 export function listLeases(entry: string): string[] {
@@ -102,7 +116,7 @@ export async function acquireShared(
 	owner: OwnerRecord,
 	options: { waitMs?: number } = {},
 ): Promise<Lease | null> {
-	for (let attempt = 0; attempt < 2; attempt += 1) {
+	for (let attempt = 0; attempt < 3; attempt += 1) {
 		const lease = createLease(entry, owner);
 		const gate = gatePath(entry);
 		let gated = false;
@@ -112,7 +126,11 @@ export async function acquireShared(
 			gated = false;
 		}
 		if (!gated || !gateExists(gate)) {
-			return lease;
+			if (leaseSurvived(lease)) {
+				return lease;
+			}
+			// A prune between the lease and the gate check moved the lease away with the entry; lease again.
+			continue;
 		}
 		lease.release();
 		const deadline = Date.now() + (options.waitMs ?? GATE_WAIT_MS);

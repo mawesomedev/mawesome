@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ENTRIES_DIR, isEntryName, validateEntry } from '../install/cache.ts';
+import { ENTRIES_DIR, isEntryName, stagingDir, validateEntry } from '../install/cache.ts';
 import { readVerified } from '../install/verify.ts';
 import { atomicRename, removeWithRetry } from './atomic.ts';
 import {
@@ -111,6 +111,28 @@ export function pruneEntry(entry: string, owner: OwnerRecord): boolean {
 	return true;
 }
 
+const STAGING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Work dirs a crashed extraction left under `staging/`; a live one is never a day old. */
+function pruneStaging(cacheRoot: string, now: number): void {
+	let names: string[];
+	try {
+		names = readdirSync(stagingDir(cacheRoot));
+	} catch {
+		return;
+	}
+	for (const name of names) {
+		const dir = join(stagingDir(cacheRoot), name);
+		try {
+			if (now - statSync(dir).mtimeMs > STAGING_MAX_AGE_MS) {
+				removeWithRetry(dir);
+			}
+		} catch {
+			// Gone already, or unreadable: nothing to reclaim.
+		}
+	}
+}
+
 /** Prunes the whole cache; the caller holds the exclusive lock (MUT-1) so only one prune ever runs. */
 export function pruneCache(
 	cacheRoot: string,
@@ -118,6 +140,7 @@ export function pruneCache(
 	options: PruneOptions,
 ): PruneReport {
 	const report: PruneReport = { removed: [], kept: [], skipped: [] };
+	pruneStaging(cacheRoot, options.now ?? Date.now());
 	let names: string[];
 	try {
 		names = readdirSync(join(cacheRoot, ENTRIES_DIR));

@@ -40,7 +40,8 @@ export function cacheBase(
 	platform: NodeJS.Platform = process.platform,
 ): string {
 	if (platform === 'win32') {
-		return join(localAppData(env), 'npm-vm', 'cache');
+		// Beside the home, not inside it: uninstall removes the home and must leave the cache alone.
+		return join(localAppData(env), 'npm-vm-cache');
 	}
 	return join(env['XDG_CACHE_HOME'] || join(homedir(), '.cache'), 'npm-vm');
 }
