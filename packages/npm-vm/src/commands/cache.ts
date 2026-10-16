@@ -7,7 +7,7 @@ import { listJournals, recoverDeadJournals, recoverForeignJournal } from '../sta
 import { listLeases, ownerLive } from '../state/lease.ts';
 import { acquireLock } from '../state/lock.ts';
 import { isLive } from '../state/proc.ts';
-import { lastUsed, pruneCache } from '../state/prune.ts';
+import { lastUsed, pruneCache, type PruneReport } from '../state/prune.ts';
 import type { CommandContext } from './context.ts';
 
 const DAY_MS = 86_400_000;
@@ -92,9 +92,16 @@ export async function cachePrune(
 	const lock = await acquireLock(context.dirs.state, context.owner);
 	try {
 		recoverDeadJournals(context.dirs.journal, context.dirs.machine.id);
-		const report = pruneCache(context.dirs.cache, context.owner, {
-			maxAgeMs: olderThanDays * DAY_MS,
-		});
+		// Homes differ, the per-machine cache does not: a lock inside the cache keeps two homes from pruning at once.
+		const cacheLock = await acquireLock(context.dirs.cache, context.owner);
+		let report: PruneReport;
+		try {
+			report = pruneCache(context.dirs.cache, context.owner, {
+				maxAgeMs: olderThanDays * DAY_MS,
+			});
+		} finally {
+			cacheLock.release();
+		}
 		context.io.out(
 			context.json
 				? JSON.stringify(report, null, 2)

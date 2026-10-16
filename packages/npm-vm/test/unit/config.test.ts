@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadNpmConfig, sanitizeEnv } from '../../src/install/config.ts';
@@ -56,7 +57,16 @@ describe('loadNpmConfig', () => {
 		expect(config.strictSsl).toBe(false);
 		expect(config.userconfig).toBe(join(home, '.npmrc'));
 		expect(config.globalconfig).toBe(join(home, 'prefix', 'etc', 'npmrc'));
+		// Global mode: not even the project the work dir sits in is read, so a home inside a repository is safe.
 		const inProject = await loadNpmConfig(own, env, join(home, 'project'));
-		expect(inProject.registry).toBe('https://project.example/');
+		expect(inProject.registry).toBe('https://user.example/');
+		mkdirSync(join(home, 'project', 'vm', 'state', 'tmp', 'work'), { recursive: true });
+		const nested = await loadNpmConfig(
+			own,
+			env,
+			join(home, 'project', 'vm', 'state', 'tmp', 'work'),
+		);
+		expect(nested.registry).toBe('https://user.example/');
+		expect(nested.globalconfig).toBe(join(home, 'prefix', 'etc', 'npmrc'));
 	});
 });

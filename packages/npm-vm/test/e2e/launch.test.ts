@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import semver from 'semver';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { installedNodes, installHome, runLauncher, startLauncher } from '../helpers/launcher.ts';
 import { deadOwner } from '../helpers/owners.ts';
+import { readOwner } from '../../src/state/lease.ts';
 import { sha256 } from '../../src/state/meta.ts';
 import { createHarness, type Harness } from '../helpers/registry-harness.ts';
 import { makeTree, manifest, removeTrees } from '../helpers/tree.ts';
@@ -262,6 +263,27 @@ describe.skipIf(process.platform === 'win32')('signals', { timeout: 60_000 }, ()
 		expect(run.signal).toBe('SIGTERM');
 		expect(Date.now() - sent).toBeLessThan(900);
 		expect(run.stdout).toContain('got SIGTERM');
+	});
+
+	it('a running npm holds a lease in its own name beside the launcher lease', async () => {
+		const { h, child } = await running();
+		const entriesDir = join(h.context.dirs.cache, 'npm');
+		const leasesDir = readdirSync(entriesDir).find((name) => name.endsWith('.leases')) as string;
+		const owners = readdirSync(join(entriesDir, leasesDir))
+			.map((name) => readOwner(join(entriesDir, leasesDir, name)))
+			.map((owner) => owner?.pid);
+		expect(owners).toHaveLength(2);
+		expect(owners).toContain(child.child.pid);
+		const npmPid = owners.find((pid) => pid !== child.child.pid) as number;
+		expect(npmPid).toBeGreaterThan(0);
+		// Only the launcher dies: npm keeps running under its own lease, which a prune would still see as live.
+		child.child.kill('SIGKILL');
+		await child.done;
+		const remaining = readdirSync(join(entriesDir, leasesDir)).map(
+			(name) => readOwner(join(entriesDir, leasesDir, name))?.pid,
+		);
+		expect(remaining).toContain(npmPid);
+		process.kill(npmPid, 'SIGKILL');
 	});
 
 	it('SIGINT to the launcher alone reaches npm after about a second', async () => {

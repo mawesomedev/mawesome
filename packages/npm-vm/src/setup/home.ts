@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir, hostname } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface MachineId {
 	/** sha256 of the platform id, first 16 hex chars (spec DIST-2). */
@@ -104,9 +104,11 @@ export function resolveDirs(
 	platform: NodeJS.Platform = process.platform,
 	machine: MachineId = readMachineId(env, platform),
 ): Dirs {
-	const state = join(home, 'state');
+	// The shims embed this path, so a relative NPM_VM_HOME must become absolute here, once.
+	const absoluteHome = resolve(home);
+	const state = join(absoluteHome, 'state');
 	return {
-		home,
+		home: absoluteHome,
 		cache: join(cacheBase(env, platform), machine.id),
 		state,
 		tmp: join(state, 'tmp'),

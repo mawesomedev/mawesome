@@ -46,7 +46,15 @@ export function atomicWrite(path: string, content: string | Buffer, mode = 0o644
 	try {
 		const fd = openSync(temp, 'wx', mode);
 		try {
-			writeSync(fd, typeof content === 'string' ? Buffer.from(content, 'utf8') : content);
+			const buffer = typeof content === 'string' ? Buffer.from(content, 'utf8') : content;
+			// writeSync may stop short without throwing; a truncated file must never reach the rename.
+			for (let offset = 0; offset < buffer.length;) {
+				const written = writeSync(fd, buffer, offset, buffer.length - offset);
+				if (written <= 0) {
+					throw new Error(`short write to ${temp}: ${offset} of ${buffer.length} bytes`);
+				}
+				offset += written;
+			}
 			fsyncSync(fd);
 		} finally {
 			closeSync(fd);

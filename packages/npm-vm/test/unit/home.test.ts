@@ -1,6 +1,6 @@
-import { join, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cacheBase, defaultHome } from '../../src/setup/home.ts';
+import { cacheBase, defaultHome, resolveDirs } from '../../src/setup/home.ts';
 
 describe('cache and home layout', () => {
 	it('keeps the Windows cache beside the home, never inside it', () => {
@@ -10,6 +10,15 @@ describe('cache and home layout', () => {
 		expect(home).toBe(join(env.LOCALAPPDATA, 'npm-vm'));
 		expect(cache).toBe(join(env.LOCALAPPDATA, 'npm-vm-cache'));
 		expect(cache.startsWith(`${home}${sep}`)).toBe(false);
+	});
+
+	it('makes a relative NPM_VM_HOME absolute, since the shims embed it', () => {
+		const dirs = resolveDirs({ NPM_VM_HOME: 'vm' }, undefined, 'linux', {
+			id: 'm',
+			fallback: false,
+		});
+		expect(dirs.home).toBe(resolve('vm'));
+		expect(dirs.state).toBe(join(resolve('vm'), 'state'));
 	});
 
 	it('follows XDG on POSIX', () => {

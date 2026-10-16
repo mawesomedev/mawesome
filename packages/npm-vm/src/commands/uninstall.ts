@@ -84,13 +84,23 @@ export async function uninstall(
 			clearCmdAutoRun(env);
 		}
 		if (options.purgeCache) {
-			// Through the gate and lease protocol, under the lock: an npm still running keeps its entry.
-			const pruned = pruneCache(dirs.cache, context.owner, { maxAgeMs: 0 });
-			report.cacheKept = pruned.kept.concat(pruned.skipped);
-			if (report.cacheKept.length === 0) {
+			// Through the gate and lease protocol, under the home lock and the cache's own lock, which other homes share.
+			const cacheLock = await acquireLock(dirs.cache, context.owner);
+			try {
+				const pruned = pruneCache(dirs.cache, context.owner, { maxAgeMs: 0 });
+				report.cacheKept = pruned.kept.concat(pruned.skipped);
+				if (report.cacheKept.length === 0) {
+					removeEmptyTree(dirs.cache);
+					report.cacheRemoved = true;
+				}
+			} finally {
+				cacheLock.release();
+			}
+			if (report.cacheRemoved) {
+				// The lock file itself kept the root; now it can go too.
 				removeEmptyTree(dirs.cache);
-				report.cacheRemoved = true;
-			} else {
+			}
+			if (report.cacheKept.length > 0) {
 				clean = false;
 				io.err(
 					`Cache kept: ${report.cacheKept.join(', ')} ${report.cacheKept.length === 1 ? 'is' : 'are'} in use by a running npm.`,

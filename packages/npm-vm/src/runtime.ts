@@ -103,7 +103,24 @@ async function launch(selector: 'npm' | 'npx', argv: string[], home: string): Pr
 		return runChild(join(dirname(result.cliPath), script), argv, null);
 	}
 	const ensured = await (await lazy()).ensure(result.selection);
-	return runChild(join(ensured.entryPath, 'bin', script), argv, ensured.lease.release);
+	const { createLease, ownerRecord } = await import('./state/lease.ts');
+	const { startIdentity } = await import('./state/proc.ts');
+	const { resolveDirs } = await import('./setup/home.ts');
+	const machineId = resolveDirs(env, home).machine.id;
+	/* npm gets a lease in its own name (spec LEASE-1): if only the launcher dies, prune sees a live owner until npm exits. */
+	const leaseForChild = (child: ChildProcess): (() => void) => {
+		const pid = child.pid as number;
+		return createLease(
+			ensured.entryPath,
+			ownerRecord(machineId, { pid, start: startIdentity(pid) }),
+		).release;
+	};
+	return runChild(
+		join(ensured.entryPath, 'bin', script),
+		argv,
+		ensured.lease.release,
+		leaseForChild,
+	);
 }
 
 const FORWARD_NOW = ['SIGTERM', 'SIGHUP'] as const;
@@ -122,12 +139,14 @@ export function runChild(
 	script: string,
 	argv: readonly string[],
 	release: (() => void) | null,
+	onSpawn: ((child: ChildProcess) => (() => void) | null) | null = null,
 ): Promise<number> {
 	return new Promise((resolve) => {
 		const child = spawn(process.execPath, [script, ...argv], {
 			stdio: 'inherit',
 			env: process.env,
 		});
+		const releaseChild = child.pid === undefined ? null : (onSpawn?.(child) ?? null);
 		const handlers: Array<[NodeJS.Signals, () => void]> = [];
 		const timers: NodeJS.Timeout[] = [];
 		if (process.platform !== 'win32') {
@@ -159,6 +178,7 @@ export function runChild(
 			for (const timer of timers) {
 				clearTimeout(timer);
 			}
+			releaseChild?.();
 			release?.();
 		};
 		child.on('error', (error) => {

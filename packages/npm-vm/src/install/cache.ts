@@ -174,13 +174,23 @@ export function publishEntry(
 }
 
 function publishPrivately(tempDir: string, canonical: string, owner: OwnerRecord): PublishedEntry {
-	const entryPath = privateEntry(canonical, newToken());
-	const privateLease = createLease(entryPath, owner);
-	try {
-		renameSync(tempDir, entryPath);
-	} catch (error) {
-		privateLease.release();
-		throw error;
+	// The same handshake as the canonical path: a prune that found the fresh leases dir first may have moved it away.
+	for (;;) {
+		const entryPath = privateEntry(canonical, newToken());
+		const privateLease = createLease(entryPath, owner);
+		if (existsSync(gatePath(entryPath)) && ownerLive(gatePath(entryPath))) {
+			privateLease.release();
+			continue;
+		}
+		if (!leaseSurvived(privateLease)) {
+			continue;
+		}
+		try {
+			renameSync(tempDir, entryPath);
+		} catch (error) {
+			privateLease.release();
+			throw error;
+		}
+		return { entryPath, lease: privateLease };
 	}
-	return { entryPath, lease: privateLease };
 }

@@ -67,8 +67,9 @@ export async function loadNpmConfig(
 		flatten,
 		nerfDarts,
 		npmPath: own.root,
-		// The global prefix and its npmrc belong to the Node the shims run, not to this process.
-		argv: [nodePath, own.cliPath],
+		/* The global prefix and its npmrc belong to the Node the shims run, not to this process.
+		 * Global mode makes the loader skip project config, so no ancestor of the home can inject an .npmrc. */
+		argv: [nodePath, own.cliPath, '--location=global'],
 		execPath: nodePath,
 		env: { ...sanitizeEnv(env) },
 		cwd,
