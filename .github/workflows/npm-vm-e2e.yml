@@ -63,7 +63,8 @@ jobs:
           nvm install 20
           # fnm installs into FNM_DIR; the suite reads the same variable, so set it before installing.
           export FNM_DIR="$HOME/.local/share/fnm"
-          curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir "$HOME/.fnm"
+          # On macOS the script defaults to Homebrew and ignores --install-dir; --force-no-brew keeps one path.
+          curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --force-no-brew --install-dir "$HOME/.fnm"
           "$HOME/.fnm/fnm" install 22
           "$HOME/.fnm/fnm" install 24
           "$HOME/.fnm/fnm" ls

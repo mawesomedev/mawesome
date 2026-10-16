@@ -127,6 +127,8 @@ async function world(
 		HOME: join(root, 'user'),
 		PREFIX: join(root, 'prefix'),
 		XDG_CACHE_HOME: join(root, 'cache'),
+		// Windows ignores XDG_CACHE_HOME; without this every world would share the real cache.
+		...(process.platform === 'win32' ? { LOCALAPPDATA: join(root, 'cache') } : {}),
 		RUNNER_TEMP: join(root, 'temp'),
 		RUNNER_OS: 'TestOS',
 		GITHUB_OUTPUT: join(root, 'output.txt'),
