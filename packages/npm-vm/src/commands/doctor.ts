@@ -57,6 +57,15 @@ function shellWinner(shell: Shell, env: NodeJS.ProcessEnv): string | null {
 }
 
 /** What `command -v npm` printed: an alias or a function wins over PATH, so no PATH fix can help. */
+/** A Windows path for comparison: `where` answers with the long name, the home may carry an 8.3 short name. */
+function canonical(path: string): string {
+	try {
+		return realpathSync.native(path).toLowerCase();
+	} catch {
+		return path.toLowerCase();
+	}
+}
+
 export function winnerKind(winner: string): 'alias' | 'function' | 'path' {
 	if (winner.startsWith('alias ')) {
 		return 'alias';
@@ -139,14 +148,6 @@ export async function collect(context: CommandContext): Promise<DoctorReport> {
 	}
 	const shimsDir = shimDir(dirs.home);
 	if (platform === 'win32') {
-		// `where` answers with the long name; the home may be spelled with an 8.3 short name.
-		const canonical = (path: string): string => {
-			try {
-				return realpathSync.native(path).toLowerCase();
-			} catch {
-				return path.toLowerCase();
-			}
-		};
 		const shimsCanonical = canonical(shimsDir);
 		for (const winner of windowsWinners(env)) {
 			if (winner.path === null || !canonical(winner.path).startsWith(shimsCanonical)) {
