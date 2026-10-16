@@ -36,7 +36,7 @@ The action installs the launcher and shims under `RUNNER_TEMP`, adds `shims/` to
 
 ## What is cached
 
-Only the verified npm tarball and a small index (version, integrity, registry signatures, publication time, `engines.node`). Never extracted files, `.npmrc`, credentials or the home. The key is `npm-vm-v1-<runner OS>-node<full Node version>-<registry id>-<constraint hash>-<version>-<integrity prefix>`; restore keys drop the last two, so a project whose range moved to a newer release still restores the old tarball, checks whether it still satisfies the range and the active Node, and downloads only when it does not. Every restore is verified again (signature, integrity, safe extraction) before anything is extracted.
+Only the verified npm tarball and a small index (version, integrity, registry signatures, publication time, `engines.node`). Never extracted files, `.npmrc`, credentials or the home. The key is `npm-vm-v1-<runner OS>-node<full Node version>-<registry id>-<constraint hash>-<version>-<integrity prefix>`; restore keys drop the last two, so a restored tarball that still satisfies the range is reused and a download happens only when it does not. Every restore is verified again before extraction.
 
 ## Permissions
 

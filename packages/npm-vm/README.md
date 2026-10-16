@@ -2,7 +2,7 @@
 
 > Run the npm version a project declares in `devEngines`, whatever Node is active.
 
-A new npm ships, your projects want it, and no Node release bundles it yet. Or an old branch still needs the npm it was built with. `npm-vm` puts an `npm` shim first on `PATH` that reads `devEngines.packageManager` from the project npm itself would use. When Node's own npm satisfies the range, it runs unchanged. Otherwise the newest matching release that supports the active Node is downloaded once through Node's own npm, signature-checked, extracted safely into a per-machine cache and run from there. It works with nvm, fnm and nvm-windows, from hooks, IDEs and scripts, and a project that declares nothing sees no difference.
+A new npm ships, your projects want it, and no Node release bundles it yet. Or an old branch still needs the npm it was built with. `npm-vm` puts an `npm` shim first on `PATH` that reads `devEngines.packageManager` from the project npm itself would use. When Node's own npm satisfies the range, it runs unchanged. Otherwise the newest matching release that supports the active Node is downloaded once through Node's own npm, verified, cached per machine and run from there. It works with nvm, fnm and nvm-windows, and a project that declares nothing sees no difference.
 
 📚 Full documentation lives in [`docs/`](./docs/): [get started](./docs/get-started.md), [how it works](./docs/how-it-works.md), [CLI](./docs/cli.md), [shells and Node managers](./docs/shells.md), [security](./docs/security.md), [GitHub Action](./docs/action.md).
 
@@ -49,4 +49,4 @@ Node 22.9 or newer runs the tool; below that the launcher falls back to Node's o
 
 ## License
 
-[MIT](../../LICENSE) © 2026 Manzoor Ahmad Wani
+[MIT](../../LICENSE)

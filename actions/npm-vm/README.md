@@ -4,7 +4,7 @@
 
 **This repository is generated.** It mirrors [`actions/npm-vm`](https://github.com/mawesomedev/mawesome/tree/main/actions/npm-vm) in [mawesomedev/mawesome](https://github.com/mawesomedev/mawesome) with the bundled `dist/` and a `release.json` naming the release added; open issues and pull requests there. Full documentation lives in the package's [docs](https://github.com/mawesomedev/mawesome/tree/main/packages/npm-vm/docs).
 
-A project that declares `devEngines.packageManager` for npm gets that npm in CI without waiting for a Node release to bundle it. The action installs the `npm-vm` launcher and shims under `RUNNER_TEMP`, puts them first on `PATH`, resolves the version once, and verifies the download against the registry's signing keys. The verified tarball goes into the Actions cache, keyed by runner OS, Node version, registry, constraint, version and integrity, and is verified again before every restore is extracted.
+A project that declares `devEngines.packageManager` for npm gets that npm in CI without waiting for a Node release to bundle it. The action installs the `npm-vm` launcher and shims under `RUNNER_TEMP`, puts them first on `PATH`, resolves the version once and verifies the download against the registry's signing keys. The verified tarball goes into the Actions cache and is verified again on every restore.
 
 ## Usage
 

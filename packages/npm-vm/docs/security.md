@@ -16,13 +16,13 @@ A version string is validated before it reaches a command line, a URL or a messa
 2. **Integrity.** The downloaded bytes must match the registry's sha512 and, when the project pins one, its `+sha512.`, `+sha256.` or `+sha224.` hash.
 3. **Safe extraction.** Only regular files and directories under `package/` are extracted. Absolute paths, `..`, symlinks, hardlinks, devices and control characters abort the whole extraction. Modes are normalised to `0644` and `0755`; ownership and extended attributes are ignored; the archive is capped at 10,000 entries and 256 MiB.
 4. **The extracted manifest.** `name` must be `npm`, `version` the resolved one, and `engines.node` is re-checked against the active Node. The packument's copy of `engines` is unsigned, so it only pre-filters.
-5. **The cache entry.** Before use, an entry must carry a `.verified` marker for the expected integrity and be owned by the current user. An invalid entry is never used and never deleted on the hot path; a private copy is fetched beside it and `cache prune` removes the invalid one later.
+5. **The cache entry.** Before use, an entry must carry a `.verified` marker for the expected integrity and be owned by the current user. An invalid entry is never used; a fresh copy is fetched beside it and `cache prune` removes it later.
 
 Extra registry keys, for a private registry that signs with its own key, go in `<home>/state/keys.json`. Anything able to write there could replace the runtime itself, so this adds no trust the home does not already hold.
 
 ## Where the download goes
 
-Node's own npm (8 or newer) is the transport. It runs in a private directory under the home, never the shared system temp dir, with that directory as its prefix and the user and global config files named explicitly. The user's registry, proxy, CA and credentials apply exactly as they do for `npm install`; the project's do not. Credentials and client certificates are sent to the registry origin only.
+Node's own npm (8 or newer) is the transport. It runs in a private directory under the home, never the shared system temp dir, with the user and global config files named explicitly. The user's registry, proxy, CA and credentials apply exactly as they do for `npm install`; the project's do not. Credentials and client certificates go to the registry origin only.
 
 ## Helper processes
 
@@ -34,7 +34,7 @@ Node is always `process.execPath`. Every other helper (`ps`, `ioreg`, `reg.exe`,
 
 ## Concurrency and crashes
 
-Every command that writes outside the cache takes an exclusive lock created with `O_EXCL`. Nothing reclaims a lock: a crashed owner leaves it, the next command says which file to delete and whether the owner still runs, and a lock from another machine is never judged from here. Every file change goes through a journal with a backup and a staged copy, so an interrupted change is finished or undone by the next command, and a file someone else changed in the meantime is left alone and reported. Cache entries use leases and a prune gate so a running npm keeps its entry and a prune never races a launch.
+Every command that writes outside the cache takes an exclusive lock created with `O_EXCL`. Nothing reclaims a lock: the next command names the file, says whether the owner still runs, and never judges a lock from another machine. Every file change goes through a journal with a backup and a staged copy, so the next command finishes or undoes an interrupted change and leaves a file someone else edited in the meantime alone. A running npm holds a lease on its cache entry, so a prune never removes one in use.
 
 ## Windows file ACLs
 

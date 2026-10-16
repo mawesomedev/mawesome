@@ -30,13 +30,11 @@ A hook runs at the next prompt, so `nvm use 22 && npm -v` on a single line can s
 npm-vm setup --link
 ```
 
-It replaces `npm` and `npx` inside every Node that nvm, fnm or nvm-windows installed with the shim, keeping the original beside it as `npm.npm-vm-original`, and records both. Whatever `PATH` says, `npm` is then the shim. `doctor` reports an install that is not linked and a link that something replaced (for example `npm i -g npm@11`, which npm-vm then leaves alone). `uninstall` puts the originals back.
-
-Link mode touches files inside Node installs; that is why it is opt-in.
+It replaces `npm` and `npx` inside every Node that nvm, fnm or nvm-windows installed with the shim, keeping the original beside it as `npm.npm-vm-original`. Whatever `PATH` says, `npm` is then the shim. `doctor` reports an install that is not linked and a link that something replaced, such as `npm i -g npm@11`, which npm-vm then leaves alone. `uninstall` puts the originals back. Link mode writes inside Node installs, which is why it is opt-in.
 
 ## Git hooks, IDEs, scripts
 
-Anything that runs with the shell's `PATH` runs the shim: git hooks, editor terminals, `npm run` scripts (npm adds its own `bin` directory for lifecycle scripts, so nested `npm` calls inside a script use the same npm that started the script, as npm has always done), and CI steps after the [Action](./action.md).
+Anything that runs with the shell's `PATH` runs the shim: git hooks, editor terminals and CI steps after the [Action](./action.md). Inside an `npm run` script, nested `npm` calls use the npm that started the script, as they always have.
 
 ## Windows
 

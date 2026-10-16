@@ -10,7 +10,3 @@ Reference documentation for `@mawesome/npm-vm`, a per-project npm version manage
 - [Shells and Node managers](./shells.md): what nvm and fnm do to `PATH`, the prompt hook, link mode, Windows.
 - [Security](./security.md): what is verified, what is never read, and the threat model.
 - [GitHub Action](./action.md): the same npm in CI, cached between runs.
-
-## One-paragraph summary
-
-A shim named `npm` sits first on `PATH`. On every call it reads `devEngines.packageManager` from the project npm itself would use, and when Node's own npm satisfies the range it runs that npm unchanged. Otherwise it picks the newest matching release whose `engines.node` accepts the active Node, downloads it once through Node's own npm, checks the registry signature and the tarball integrity, extracts it into a per-machine cache and runs it from there. Global installs always use Node's own npm. Nothing is pinned per Node version, nothing is written into a Node install unless `--link` asks for it, and a project that declares nothing sees no difference at all.
