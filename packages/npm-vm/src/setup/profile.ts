@@ -54,8 +54,10 @@ function bashLoginFile(home: string): string {
 export function powershellProfile(
 	host: 'powershell' | 'pwsh',
 	env: NodeJS.ProcessEnv,
+	platform: NodeJS.Platform = process.platform,
 ): string | null {
-	const bin = host === 'powershell' ? powershellPath(env) : shellBinary('powershell', env);
+	const bin =
+		host === 'powershell' ? powershellPath(env) : shellBinary('powershell', env, platform);
 	if (bin === null) {
 		return null;
 	}
@@ -113,7 +115,7 @@ export function profileTargets(
 				const hosts: Array<'powershell' | 'pwsh'> =
 					platform === 'win32' ? ['powershell', 'pwsh'] : ['pwsh'];
 				for (const host of hosts) {
-					const file = powershellProfile(host, env);
+					const file = powershellProfile(host, env, platform);
 					if (file !== null && !targets.some((target) => target.file === file)) {
 						targets.push({ shell, file, parts: { path: true, hook: true } });
 					}
