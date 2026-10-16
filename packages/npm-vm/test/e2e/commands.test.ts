@@ -111,12 +111,13 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		writeFileSync(join(planted, 'zsh'), `#!/bin/sh\ntouch "${join(planted, 'ran')}"\n`, {
 			mode: 0o755,
 		});
+		const pathKey = Object.keys(h.env).find((name) => name.toLowerCase() === 'path') ?? 'PATH';
 		const healthy = await command(['doctor', '--json'], {
 			home: h.home,
 			env: {
 				...env,
 				SHELL: '/nonexistent/shell',
-				PATH: `${planted}${delimiter}${h.env['PATH'] ?? ''}`,
+				[pathKey]: `${planted}${delimiter}${h.env[pathKey] ?? ''}`,
 			},
 			cwd: h.project,
 		});
@@ -190,7 +191,6 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 	it('prints the snippet instead of editing a symlinked profile and reports it under --strict', async () => {
 		const h = await start({});
 		writeFileSync(join(h.root, 'user', 'real-zshrc'), '');
-		const { symlinkSync } = await import('node:fs');
 		symlinkSync(join(h.root, 'user', 'real-zshrc'), join(h.root, 'user', '.zshrc'));
 		const env = { ...h.env, SHELL: '/bin/zsh', ZDOTDIR: join(h.root, 'user') };
 		const result = await command(['setup', ...SETUP, '--yes', '--strict'], {
