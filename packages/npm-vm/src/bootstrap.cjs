@@ -211,8 +211,7 @@ function main() {
 					FLOOR_TEXT +
 					' or newer; the active Node is ' +
 					process.versions.node +
-					'. ' +
-					setupHint(),
+					'. Switch to a newer Node to run npm-vm commands.',
 				64
 			);
 			return;

@@ -53,6 +53,14 @@ function shellWinner(shell: Shell, env: NodeJS.ProcessEnv): string | null {
 	}
 }
 
+/** What `command -v npm` printed: an alias or a function wins over PATH, so no PATH fix can help. */
+export function winnerKind(winner: string): 'alias' | 'function' | 'path' {
+	if (winner.startsWith('alias ')) {
+		return 'alias';
+	}
+	return winner === 'npm' ? 'function' : 'path';
+}
+
 function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
 	return platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
@@ -151,7 +159,14 @@ export async function collect(context: CommandContext): Promise<DoctorReport> {
 			if (winner === null) {
 				continue;
 			}
-			if (!samePath(winner, join(shimsDir, 'npm'), platform)) {
+			const kind = winnerKind(winner);
+			if (kind !== 'path') {
+				problem(
+					'path',
+					`${shell} resolves npm to a shell ${kind}: ${winner}`,
+					`A shell ${kind} wins over PATH. Remove it from your ${shell} profile, or make it run ${join(shimsDir, 'npm')}.`,
+				);
+			} else if (!samePath(winner, join(shimsDir, 'npm'), platform)) {
 				const corepack = winner.includes('corepack') ? ' (a Corepack shim)' : '';
 				problem(
 					'path',

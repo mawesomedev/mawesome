@@ -315,7 +315,8 @@ describe('other Node versions', { timeout: 120_000 }, () => {
 					node: node.path,
 				});
 				expect(cli.status, node.version).toBe(64);
-				expect(cli.stderr, node.version).toContain('setup');
+				expect(cli.stderr, node.version).toContain('Switch to a newer Node');
+				expect(cli.stderr, node.version).not.toContain('reinstall');
 			}
 			expect(h.registry.requests).toHaveLength(0);
 		},
