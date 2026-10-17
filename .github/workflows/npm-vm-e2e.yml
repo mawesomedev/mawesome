@@ -1,0 +1,91 @@
+name: npm-vm e2e
+
+# The release gate of packages/npm-vm (spec section 14): the launcher and its shell hooks against real
+# Node managers on every OS. The suite skips the manager scenarios whose tool is not installed.
+on:
+  pull_request:
+    paths:
+      - 'packages/npm-vm/**'
+      - 'actions/npm-vm/**'
+      - 'tools/testing/**'
+      - '.github/workflows/npm-vm-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-vm-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Harden runner
+        if: runner.os == 'Linux'
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build
+        run: pnpm --filter '@mawesome/npm-vm-action...' build
+      # nvm and fnm on POSIX; extra Node lines so the launcher runs below the floor and on it.
+      - name: Install nvm and fnm
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          export NVM_DIR="$HOME/.nvm"
+          # The Linux runners ship nvm already; macOS does not, and a shallow clone of the tag fails there.
+          if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | PROFILE=/dev/null bash
+          fi
+          # Without --no-use, nvm.sh exits 3 under `set -e` when no default alias exists yet.
+          . "$NVM_DIR/nvm.sh" --no-use
+          nvm install 22.9.0
+          # Below the floor the launcher must hand over to Node's own npm; the suite checks every line present.
+          nvm install 20
+          nvm install 18
+          nvm install 16
+          # fnm installs into FNM_DIR; the suite reads the same variable, so set it before installing.
+          export FNM_DIR="$HOME/.local/share/fnm"
+          # On macOS the script defaults to Homebrew and ignores --install-dir; --force-no-brew keeps one path.
+          curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --force-no-brew --install-dir "$HOME/.fnm"
+          "$HOME/.fnm/fnm" install 22
+          "$HOME/.fnm/fnm" install 24
+          "$HOME/.fnm/fnm" ls
+          echo "FNM_DIR=$FNM_DIR" >> "$GITHUB_ENV"
+          echo "$HOME/.fnm" >> "$GITHUB_PATH"
+      - name: Install nvm-windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nvm --no-progress -y
+          "NVM_HOME=$env:ProgramData\nvm" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Run the npm-vm suite
+        shell: bash
+        working-directory: packages/npm-vm
+        env:
+          NPM_VM_E2E_MANAGERS: '1'
+        run: node_modules/.bin/vitest run
+      - name: Run the action suite
+        shell: bash
+        working-directory: actions/npm-vm
+        run: node_modules/.bin/vitest run

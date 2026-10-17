@@ -52,6 +52,16 @@ export const tools: Tool[] = [
 		],
 	},
 	{
+		slug: 'npm-vm',
+		name: 'npm-vm',
+		npm: '@mawesome/npm-vm',
+		tagline: 'Run the npm version a project declares in devEngines, whatever Node is active.',
+		icon: 'setting',
+		quickstart: 'npx --prefix ~ -y @mawesome/npm-vm setup',
+		playground: false,
+		docOrder: ['get-started', 'how-it-works', 'cli', 'shells', 'security', 'action'],
+	},
+	{
 		slug: 'pr-baseline',
 		name: 'pr-baseline',
 		npm: '@mawesome/pr-baseline',
@@ -89,6 +99,13 @@ export interface Action {
 }
 
 export const actions: Action[] = [
+	{
+		repo: 'mawesomedev/npm-vm-action',
+		workspace: '@mawesome/npm-vm-action',
+		tagline: 'Give a job the npm its project declares, verified and cached between runs.',
+		icon: 'github',
+		docs: '/npm-vm/action/',
+	},
 	{
 		repo: 'mawesomedev/pr-baseline-action',
 		workspace: '@mawesome/pr-baseline-action',
