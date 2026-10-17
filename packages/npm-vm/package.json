@@ -1,6 +1,6 @@
 {
 	"name": "@mawesome/npm-vm",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Run the npm version a project declares in devEngines, whatever Node is active",
 	"keywords": [
 		"devengines",
