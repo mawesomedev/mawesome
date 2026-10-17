@@ -1,6 +1,6 @@
 {
 	"name": "@mawesome/npm-vm-action",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"private": true,
 	"description": "GitHub Action that runs the npm version a project declares in devEngines, cached between runs",
 	"license": "MIT",
