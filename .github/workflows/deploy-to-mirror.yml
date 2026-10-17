@@ -27,7 +27,7 @@ permissions: {}
 
 jobs:
   deploy:
-    name: Deploy the action to its mirror
+    name: 'Deploy to mirror: Deploy the action'
     runs-on: ubuntu-latest
     # Restrict this environment to the tag pattern @mawesome/*-action@* and the main branch in the repo settings,
     # and protect that tag pattern with a ruleset that only the release App can bypass: the run executes the tagged commit.
