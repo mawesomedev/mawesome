@@ -7,6 +7,10 @@ export default defineConfig({
 		perf: 'warn',
 	},
 	plugins: ['import', 'typescript', 'unicorn', 'promise'],
+	rules: {
+		// GraphQL's introspection field is spelled this way by spec.
+		'no-underscore-dangle': ['warn', { allow: ['__typename'] }],
+	},
 	overrides: [
 		{
 			// pr-baseline talks to a rate-limited API; its sequential awaits are the pacing, not an oversight.
