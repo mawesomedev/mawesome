@@ -3,3 +3,5 @@
 **/*.d.ts
 **/*.astro
 **/*.mdx
+# Test fixtures are deliberately unusual input for the code under test, not code to lint.
+**/test/fixtures/**
