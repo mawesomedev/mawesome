@@ -28,7 +28,7 @@ env:
   PR_BASELINES: '[{"name":"pr-baseline","label":"Require PR update","markers":["pnpm-lock.yaml","pnpm-workspace.yaml",".github/workflows/verify.yml"]}]'
 jobs:
   refresh-pr-status:
-    name: Refresh the PR status against the baseline
+    name: 'PR baseline: Refresh the PR status'
     if: >-
       !github.event.repository.fork &&
       (github.event_name == 'merge_group' || (github.event_name == 'pull_request_target' && github.event.action != 'closed'))
@@ -69,7 +69,7 @@ jobs:
           base: main
           baselines: ${{ env.PR_BASELINES }}
   refresh-pr-statuses:
-    name: Move baselines and refresh PR statuses
+    name: 'PR baseline: Move baselines and refresh PR statuses'
     # A merge fires `push` on main at the same moment, so a `closed` trigger would only queue this twice.
     if: >-
       !github.event.repository.fork && (

@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   e2e:
-    name: ${{ matrix.os }}
+    name: 'npm-vm e2e: ${{ matrix.os }}'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
