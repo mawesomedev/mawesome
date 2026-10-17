@@ -39,6 +39,17 @@ Run `/add-package <name>` (or copy `templates/package/` to `packages/<name>`), t
 3. `pnpm install`, then `pnpm verify` until green.
 4. Add a changeset (below).
 
+## Adding an action
+
+An `actions/<name>` workspace stays private and ships through the mirror repository named in its `package.json` `mirror` field. Before its first release, set up once:
+
+1. Create the public mirror repository (`mawesomedev/<name>-action`) with an empty initial commit on `main`; the deploy script refuses a repository without one.
+2. Add the mirror to the mawesome-bot GitHub App installation so `deploy-to-mirror.yml` can mint a token scoped to it.
+3. Allow the tag pattern `@mawesome/<name>-action@*` in the `action-mirror` environment's deployment branch policies; without it the deploy job is rejected before it starts.
+4. Reference the action in docs as `mawesomedev/<name>-action@<sha> # vX.Y.Z`. The mirror moves `vX.Y.Z` and the major tag `vX` on each release, so a 0.x line has `v0`, not `v1`.
+
+Marketplace publication stays manual: releases made with the App token never reach the Marketplace, so edit the release in the mirror and tick "Publish this Action to the GitHub Marketplace" when wanted.
+
 ## Dependencies
 
 - **syncpack** (`pnpm deps:lint`) enforces that every dependency uses **one identical version across the whole repo**, that the ranges are **caret**, and that internal `@mawesome/*` deps use `workspace:*`. Run `pnpm deps:fix` to auto-align mismatches.
@@ -51,5 +62,5 @@ Every change that affects a **published** package's behavior or public API needs
 
 1. **Create one:** `pnpm changeset`. Select the affected `@mawesome/*` package(s), pick the bump — **patch** (fix), **minor** (backward-compatible feature), **major** (breaking; note `0.x` minors are still breaking under semver) — and write a clear, user-facing summary. It becomes the package's changelog entry. Commit the generated file in `.changeset/`.
 2. **Don't hand-edit `CHANGELOG.md`** — changesets generates it.
-3. **Release flow:** merges to `main` accumulate changesets. The `changesets/action` opens/updates a **"Version Packages"** PR that bumps versions and writes changelogs. Merging _that_ PR publishes the changed packages via npm **OIDC trusted publishing** (no tokens). The first publish of a brand-new package name may need a one-time manual `npm publish` / npm UI setup to create the name before the trusted-publisher link exists.
+3. **Release flow:** merges to `main` accumulate changesets. The `changesets/action` opens/updates a **"Version Packages"** PR that bumps versions and writes changelogs. Merging _that_ PR publishes the changed packages via npm **OIDC trusted publishing** (no tokens). A brand-new package name needs a one-time bootstrap before the trusted-publisher link can exist: publish a placeholder (`0.0.0-alpha.0`, `npm publish --access public --tag alpha`) from a 2FA account, then add the trusted publisher on npmjs.com (GitHub Actions, repository `mawesomedev/mawesome`, workflow `release.yml`, environment `npm-publish`).
 4. Internal `@mawesome/*` dependents are bumped automatically (`updateInternalDependencies: patch`).

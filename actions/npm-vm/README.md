@@ -14,7 +14,7 @@ steps:
   - uses: actions/setup-node@v5
     with:
       node-version: 24
-  - uses: mawesomedev/npm-vm-action@v1
+  - uses: mawesomedev/npm-vm-action@<sha> # vX.Y.Z
   - run: npm ci
 ```
 

@@ -40,7 +40,7 @@ Global installs (`npm i -g`) always use Node's own npm.
 ## In CI
 
 ```yaml
-- uses: mawesomedev/npm-vm-action@v1
+- uses: mawesomedev/npm-vm-action@<sha> # vX.Y.Z
 ```
 
 ## Requirements
