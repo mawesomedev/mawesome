@@ -1,18 +1,22 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installBootstrap, installVersion, setCurrent } from '../../src/setup/layout.ts';
 
 const packageDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+/** The version the built runtime reports; tests derive every release from it so a version bump cannot break them. */
+export const OWN_VERSION: string = (
+	JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as { version: string }
+).version;
+
 export const DIST_RUNTIME: string = join(packageDir, 'dist', 'runtime');
-export const RUNTIME_VERSION: string = '0.0.0';
 
 /** Lays out a home the way setup will: the runtime under `versions/`, `current`, and the launcher at the root. */
 export function installHome(
 	home: string,
-	version: string = RUNTIME_VERSION,
+	version: string = OWN_VERSION,
 	distDir: string = DIST_RUNTIME,
 ): string {
 	installVersion(home, version, distDir, 1);

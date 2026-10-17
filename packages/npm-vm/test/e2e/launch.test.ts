@@ -2,7 +2,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import semver from 'semver';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { installedNodes, installHome, runLauncher, startLauncher } from '../helpers/launcher.ts';
+import {
+	installedNodes,
+	installHome,
+	OWN_VERSION,
+	runLauncher,
+	startLauncher,
+} from '../helpers/launcher.ts';
 import { deadOwner } from '../helpers/owners.ts';
 import { readOwner } from '../../src/state/lease.ts';
 import { sha256 } from '../../src/state/meta.ts';
@@ -117,7 +123,7 @@ describe('launcher', { timeout: 120_000 }, () => {
 			(
 				await runLauncher(h.home, ['cli', '--version'], { cwd: h.project, env: h.env })
 			).stdout.trim(),
-		).toBe('0.0.0');
+		).toBe(OWN_VERSION);
 	});
 
 	it('exits 6 with M-ABI for a malformed current pointer or an unsupported runtime ABI', async () => {

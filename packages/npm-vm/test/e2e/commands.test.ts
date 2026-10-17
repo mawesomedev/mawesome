@@ -12,13 +12,14 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { basename, delimiter, join } from 'node:path';
+import semver from 'semver';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildTarball, type TarEntry } from '@mawesome/testing/registry/tar';
 import { SLSA_PREDICATE } from '../../src/install/provenance.ts';
 import { selfUpdate } from '../../src/commands/self-update.ts';
 import { createCommandContext } from '../../src/commands/context.ts';
 import { command } from '../helpers/commands.ts';
-import { DIST_RUNTIME, installHome, runLauncher } from '../helpers/launcher.ts';
+import { DIST_RUNTIME, installHome, OWN_VERSION, runLauncher } from '../helpers/launcher.ts';
 import { deadOwner, liveOwner } from '../helpers/owners.ts';
 import { acquireLock } from '../../src/state/lock.ts';
 import { createHarness, type Harness } from '../helpers/registry-harness.ts';
@@ -89,7 +90,7 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 		expect(yes.code).toBe(0);
 		expect(readFileSync(join(h.root, 'user', '.zshrc'), 'utf8')).toContain('_npm_vm_guard');
 		expect(readFileSync(join(h.root, 'user', '.zshenv'), 'utf8')).toContain('shims');
-		expect(readCurrent(h.home)).toBe('0.0.0');
+		expect(readCurrent(h.home)).toBe(OWN_VERSION);
 		const launched = await runLauncher(h.home, ['npm', '-v'], { cwd: h.project, env });
 		expect(launched.status).toBe(0);
 
@@ -122,7 +123,7 @@ describe('setup, doctor and uninstall', { timeout: 120_000 }, () => {
 			cwd: h.project,
 		});
 		expect(healthy.code, healthy.stdout).toBe(0);
-		expect(JSON.parse(healthy.stdout)).toMatchObject({ version: '0.0.0', problems: [] });
+		expect(JSON.parse(healthy.stdout)).toMatchObject({ version: OWN_VERSION, problems: [] });
 		expect(existsSync(join(planted, 'ran'))).toBe(false);
 
 		writeFileSync(join(h.home, 'shims', 'npx'), '#!/bin/sh\nexit 1\n');
@@ -496,13 +497,25 @@ async function updateContext(h: Harness & { home: string }) {
 	return createCommandContext({
 		home: h.home,
 		env: h.env,
-		version: '0.0.0',
+		version: OWN_VERSION,
 		io: {
 			out: () => undefined,
 			err: () => undefined,
 			interactive: false,
 			confirm: async () => false,
 		},
+	});
+}
+
+/** A release `minors` minor versions after the one installed, which the built runtime reports. */
+function later(minors: number, patch = 0): string {
+	return `${semver.major(OWN_VERSION)}.${semver.minor(OWN_VERSION) + minors}.${patch}`;
+}
+
+function publishRelease(h: Harness, version: string, tarball: Buffer): void {
+	h.registry.publishPackage('@mawesome/npm-vm', version, {
+		tarball,
+		attestations: [attestationFor(version, tarball)],
 	});
 }
 
@@ -516,69 +529,55 @@ describe('self-update', { timeout: 120_000 }, () => {
 				verifier.calls += 1;
 			},
 		};
-		const older = releaseTarball('0.0.0', 1);
-		h.registry.publishPackage('@mawesome/npm-vm', '0.0.0', {
-			tarball: older,
-			attestations: [attestationFor('0.0.0', older)],
-		});
+		// The installed version republished is not forward, so nothing is downloaded or verified.
+		publishRelease(h, OWN_VERSION, releaseTarball(OWN_VERSION, 1));
 		expect(await selfUpdate(ctx, { rollback: false }, deps)).toBe(0);
-		expect(readCurrent(h.home)).toBe('0.0.0');
+		expect(readCurrent(h.home)).toBe(OWN_VERSION);
 		expect(verifier.calls).toBe(0);
 
-		const next = releaseTarball('0.1.0', 1);
-		h.registry.publishPackage('@mawesome/npm-vm', '0.1.0', {
-			tarball: next,
-			attestations: [attestationFor('0.1.0', next)],
-		});
+		publishRelease(h, later(1), releaseTarball(later(1), 1));
 		expect(await selfUpdate(ctx, { rollback: false }, deps)).toBe(0);
 		expect(verifier.calls).toBe(1);
-		expect(readCurrent(h.home)).toBe('0.1.0');
-		expect(readPrevious(h.home)).toBe('0.0.0');
+		expect(readCurrent(h.home)).toBe(later(1));
+		expect(readPrevious(h.home)).toBe(OWN_VERSION);
 		const launched = await runLauncher(h.home, ['cli', '--version'], {
 			cwd: h.project,
 			env: h.env,
 		});
-		expect(launched.stdout.trim()).toBe('0.1.0');
+		expect(launched.stdout.trim()).toBe(later(1));
 
 		expect(await selfUpdate(ctx, { rollback: true })).toBe(0);
-		expect(readCurrent(h.home)).toBe('0.0.0');
+		expect(readCurrent(h.home)).toBe(OWN_VERSION);
 		expect(
 			(
 				await runLauncher(h.home, ['cli', '--version'], { cwd: h.project, env: h.env })
 			).stdout.trim(),
-		).toBe('0.0.0');
+		).toBe(OWN_VERSION);
 	});
 
 	it('refuses a release without provenance and one failing its health check, leaving current unchanged', async () => {
 		const h = await start({});
 		const ctx = await updateContext(h);
-		const unattested = releaseTarball('0.2.0', 1);
-		h.registry.publishPackage('@mawesome/npm-vm', '0.2.0', { tarball: unattested });
-		await expect(
-			selfUpdate(ctx, { rollback: false }, { verifyBundle: async () => undefined }),
-		).rejects.toMatchObject({ id: 'M-PROVENANCE', exitCode: 5 });
-		expect(readCurrent(h.home)).toBe('0.0.0');
-
-		const broken = releaseTarball('0.3.0-wrong', 1);
-		h.registry.publishPackage('@mawesome/npm-vm', '0.3.0', {
-			tarball: broken,
-			attestations: [attestationFor('0.3.0', broken)],
+		h.registry.publishPackage('@mawesome/npm-vm', later(2), {
+			tarball: releaseTarball(later(2), 1),
 		});
 		await expect(
 			selfUpdate(ctx, { rollback: false }, { verifyBundle: async () => undefined }),
+		).rejects.toMatchObject({ id: 'M-PROVENANCE', exitCode: 5 });
+		expect(readCurrent(h.home)).toBe(OWN_VERSION);
+
+		publishRelease(h, later(3), releaseTarball(`${later(3)}-wrong`, 1));
+		await expect(
+			selfUpdate(ctx, { rollback: false }, { verifyBundle: async () => undefined }),
 		).rejects.toMatchObject({ id: 'M-ABI' });
-		expect(readCurrent(h.home)).toBe('0.0.0');
-		expect(existsSync(join(h.home, 'versions', '0.3.0'))).toBe(false);
+		expect(readCurrent(h.home)).toBe(OWN_VERSION);
+		expect(existsSync(join(h.home, 'versions', later(3)))).toBe(false);
 	});
 
 	it('replaces the launchers on an ABI change and refuses a skipped generation', async () => {
 		const h = await start({});
 		const ctx = await updateContext(h);
-		const next = releaseTarball('0.4.0', 2);
-		h.registry.publishPackage('@mawesome/npm-vm', '0.4.0', {
-			tarball: next,
-			attestations: [attestationFor('0.4.0', next)],
-		});
+		publishRelease(h, later(4), releaseTarball(later(4), 2));
 		expect(
 			await selfUpdate(ctx, { rollback: false }, { verifyBundle: async () => undefined }),
 		).toBe(0);
@@ -588,33 +587,25 @@ describe('self-update', { timeout: 120_000 }, () => {
 			(
 				await runLauncher(h.home, ['cli', '--version'], { cwd: h.project, env: h.env })
 			).stdout.trim(),
-		).toBe('0.4.0');
+		).toBe(later(4));
 		// A newer version shipping an older launcher would break every shim between the two swaps: refused.
-		const older = releaseTarball('0.4.1', 1);
-		h.registry.publishPackage('@mawesome/npm-vm', '0.4.1', {
-			tarball: older,
-			attestations: [attestationFor('0.4.1', older)],
-		});
+		publishRelease(h, later(4, 1), releaseTarball(later(4, 1), 1));
 		await expect(
 			selfUpdate(ctx, { rollback: false }, { verifyBundle: async () => undefined }),
 		).rejects.toMatchObject({ id: 'M-ABI', exitCode: 6 });
-		expect(readCurrent(h.home)).toBe('0.4.0');
+		expect(readCurrent(h.home)).toBe(later(4));
 		expect(await selfUpdate(ctx, { rollback: true })).toBe(0);
 		expect(readFileSync(join(h.home, 'shims', 'npm'), 'utf8')).toContain('abi=1');
 		expect(
 			(
 				await runLauncher(h.home, ['cli', '--version'], { cwd: h.project, env: h.env })
 			).stdout.trim(),
-		).toBe('0.0.0');
+		).toBe(OWN_VERSION);
 
-		const far = releaseTarball('0.5.0', 3);
-		h.registry.publishPackage('@mawesome/npm-vm', '0.5.0', {
-			tarball: far,
-			attestations: [attestationFor('0.5.0', far)],
-		});
+		publishRelease(h, later(5), releaseTarball(later(5), 3));
 		await expect(
 			selfUpdate(ctx, { rollback: false }, { verifyBundle: async () => undefined }),
 		).rejects.toMatchObject({ id: 'M-ABI', exitCode: 6 });
-		expect(readCurrent(h.home)).toBe('0.0.0');
+		expect(readCurrent(h.home)).toBe(OWN_VERSION);
 	});
 });
