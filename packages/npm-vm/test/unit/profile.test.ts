@@ -33,28 +33,33 @@ function dirsIn(root: string) {
 }
 
 describe('profileTargets', () => {
-	it('names the files per shell, honouring ZDOTDIR and the bash login file', () => {
-		const home = makeTree({ '.bash_login': '', zdot: {} });
-		const zsh = profileTargets(['zsh'], { ZDOTDIR: join(home, 'zdot') }, 'linux', home);
-		expect(zsh.map((target) => [target.file, target.parts])).toEqual([
-			[join(home, 'zdot', '.zshenv'), { path: true, hook: false }],
-			[join(home, 'zdot', '.zshrc'), { path: false, hook: true }],
-		]);
-		const bash = profileTargets(['bash'], {}, 'linux', home);
-		expect(bash.map((target) => target.file)).toEqual([
-			join(home, '.bashrc'),
-			join(home, '.bash_login'),
-		]);
-		const fish = profileTargets(['fish'], {}, 'linux', home);
-		expect(fish[0]?.file).toBe(join(home, '.config', 'fish', 'conf.d', 'npm-vm.fish'));
-		// pwsh is found through the system dirs, never PATH: present or not, the answer never depends on PATH.
-		const pwsh = profileTargets(['powershell'], { PATH: '/nonexistent' }, 'linux', home);
-		expect(pwsh).toEqual(
-			shellBinary('powershell', {}, 'linux') === null
-				? []
-				: [expect.objectContaining({ shell: 'powershell' })],
-		);
-	});
+	// The PowerShell target asks pwsh for its profile when installed; a cold start on CI can take seconds.
+	it(
+		'names the files per shell, honouring ZDOTDIR and the bash login file',
+		{ timeout: 30_000 },
+		() => {
+			const home = makeTree({ '.bash_login': '', zdot: {} });
+			const zsh = profileTargets(['zsh'], { ZDOTDIR: join(home, 'zdot') }, 'linux', home);
+			expect(zsh.map((target) => [target.file, target.parts])).toEqual([
+				[join(home, 'zdot', '.zshenv'), { path: true, hook: false }],
+				[join(home, 'zdot', '.zshrc'), { path: false, hook: true }],
+			]);
+			const bash = profileTargets(['bash'], {}, 'linux', home);
+			expect(bash.map((target) => target.file)).toEqual([
+				join(home, '.bashrc'),
+				join(home, '.bash_login'),
+			]);
+			const fish = profileTargets(['fish'], {}, 'linux', home);
+			expect(fish[0]?.file).toBe(join(home, '.config', 'fish', 'conf.d', 'npm-vm.fish'));
+			// pwsh is found through the system dirs, never PATH: present or not, the answer never depends on PATH.
+			const pwsh = profileTargets(['powershell'], { PATH: '/nonexistent' }, 'linux', home);
+			expect(pwsh).toEqual(
+				shellBinary('powershell', {}, 'linux') === null
+					? []
+					: [expect.objectContaining({ shell: 'powershell' })],
+			);
+		},
+	);
 });
 
 describe('withBlock', () => {
