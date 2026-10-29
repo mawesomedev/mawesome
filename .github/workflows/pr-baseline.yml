@@ -42,7 +42,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2
         with:
           egress-policy: audit
       # Always main: a merge_group event would otherwise check out the queued PRs' code.
@@ -89,7 +89,7 @@ jobs:
       queue: max
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2
         with:
           egress-policy: audit
       - name: Checkout main with full history
