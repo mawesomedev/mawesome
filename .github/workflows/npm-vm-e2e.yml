@@ -2,13 +2,9 @@ name: npm-vm e2e
 
 # The release gate of packages/npm-vm (spec section 14): the launcher and its shell hooks against real
 # Node managers on every OS. The suite skips the manager scenarios whose tool is not installed.
+# No `paths` filter: a filtered-out workflow reports nothing, and the required e2e checks would wait forever.
 on:
   pull_request:
-    paths:
-      - 'packages/npm-vm/**'
-      - 'actions/npm-vm/**'
-      - 'tools/testing/**'
-      - '.github/workflows/npm-vm-e2e.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,37 +15,87 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: 'npm-vm e2e: Detect changes'
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.diff.outputs.run }}
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
+        with:
+          egress-policy: audit
+      - name: Checkout
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Diff against the base
+        id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Captured first so a failing diff fails the job; --no-renames keeps both paths of a move.
+          files=$(git diff --no-renames --name-only "$BASE...HEAD")
+          if printf '%s\n' "$files" | grep -qE '^(packages/npm-vm/|actions/npm-vm/|tools/testing/|\.github/workflows/npm-vm-e2e\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   e2e:
     name: 'npm-vm e2e: ${{ matrix.os }}'
+    needs: changes
+    # Runs even when detection failed, so the required checks fail instead of being skipped.
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
+    # Gated per step, not per job: a skipped matrix job reports one check under its unexpanded name.
+    env:
+      RUN_E2E: ${{ needs.changes.outputs.run }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      - name: Require a change detection result
+        if: needs.changes.result != 'success' || (env.RUN_E2E != 'true' && env.RUN_E2E != 'false')
+        shell: bash
+        run: |
+          echo "::error::Change detection did not produce a result; failing instead of skipping the e2e suite."
+          exit 1
       - name: Harden runner
-        if: runner.os == 'Linux'
+        if: env.RUN_E2E == 'true' && runner.os == 'Linux'
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
         with:
           egress-policy: audit
       - name: Checkout
+        if: env.RUN_E2E == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up pnpm
+        if: env.RUN_E2E == 'true'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - name: Set up Node.js
+        if: env.RUN_E2E == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: pnpm
       - name: Install dependencies
+        if: env.RUN_E2E == 'true'
         run: pnpm install --frozen-lockfile
       - name: Build
+        if: env.RUN_E2E == 'true'
         run: pnpm --filter '@mawesome/npm-vm-action...' build
       # nvm and fnm on POSIX; extra Node lines so the launcher runs below the floor and on it.
       - name: Install nvm and fnm
-        if: runner.os != 'Windows'
+        if: env.RUN_E2E == 'true' && runner.os != 'Windows'
         shell: bash
         run: |
           export NVM_DIR="$HOME/.nvm"
@@ -74,18 +120,20 @@ jobs:
           echo "FNM_DIR=$FNM_DIR" >> "$GITHUB_ENV"
           echo "$HOME/.fnm" >> "$GITHUB_PATH"
       - name: Install nvm-windows
-        if: runner.os == 'Windows'
+        if: env.RUN_E2E == 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install nvm --no-progress -y
           "NVM_HOME=$env:ProgramData\nvm" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Run the npm-vm suite
+        if: env.RUN_E2E == 'true'
         shell: bash
         working-directory: packages/npm-vm
         env:
           NPM_VM_E2E_MANAGERS: '1'
         run: node_modules/.bin/vitest run
       - name: Run the action suite
+        if: env.RUN_E2E == 'true'
         shell: bash
         working-directory: actions/npm-vm
         run: node_modules/.bin/vitest run
