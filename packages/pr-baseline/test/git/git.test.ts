@@ -1671,6 +1671,11 @@ describe('lagging pull refs', () => {
 			const result = await client().refreshPrStatuses();
 			expect(result).toMatchObject({ written: 0, incomplete: true, reason: 'rate-limit' });
 			expect(world.github.latestStatus(head, 'PR baseline')).toBeNull();
+			// The limited compare is the descendant check itself, not a baseline question.
+			const compares = world.github.requests(/compare/);
+			expect(compares).toHaveLength(1);
+			expect(compares[0]?.path).toContain(stuck);
+			expect(compares[0]?.path).toContain(head);
 		});
 	});
 });

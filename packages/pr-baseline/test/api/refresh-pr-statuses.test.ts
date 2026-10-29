@@ -515,6 +515,50 @@ describe('refresh round 4', () => {
 	});
 });
 
+/* PR 1 is listed and re-read at 11 while its pull ref still shows 19, a commit 11 does not descend from.
+ * The adapter refuses questions about commits it was not prepared for, as a strict custom adapter would. */
+function laggingAdapter(failOnPrepare?: number) {
+	let github: FakeGitHub | undefined;
+	const prepared: Array<{ shas: string[]; optional: string[] | undefined }> = [];
+	const asked: Array<[string, string]> = [];
+	const known = new Set<string>();
+	const adapter: Ancestry = {
+		name: 'api',
+		isAncestor(ancestor, descendant) {
+			if (!known.has(ancestor)) {
+				throw new Error(`ancestry asked about ${ancestor} before it was prepared`);
+			}
+			asked.push([ancestor, descendant]);
+			return Promise.resolve(github?.isAncestor(ancestor, descendant) ?? false);
+		},
+		changedFiles: () => Promise.resolve([]),
+		prepare(input) {
+			prepared.push({ shas: input.shas, optional: input.optional });
+			if (prepared.length === failOnPrepare) {
+				return Promise.reject(new GitHubError('rate-limit', 'custom', 'limited'));
+			}
+			for (const commit of [...input.shas, ...input.refs.map((ref) => ref.sha)]) {
+				if (commit !== null) {
+					known.add(commit);
+				}
+			}
+			return Promise.resolve({
+				heads: input.pulls.length > 0 ? new Map([[1, sha(19)]]) : new Map(),
+			});
+		},
+	};
+	const setup = (gh: FakeGitHub): void => {
+		github = gh;
+		gh.baseline('pr-baseline', sha(4));
+		gh.commit(sha(11), [sha(3)]);
+		gh.commit(sha(12), [sha(3)]);
+		gh.commit(sha(19), [sha(3)]);
+		gh.pull({ number: 1, headSha: sha(11) });
+		gh.pull({ number: 2, headSha: sha(12) });
+	};
+	return { adapter, setup, prepared, asked };
+}
+
 /** Baseline at 4; PR 1 green and now failing, 2 already red, 3 unstamped, 4 carrying a foreign `error`. */
 function scoped(gh: FakeGitHub): void {
 	gh.baseline('pr-baseline', sha(4));
@@ -667,52 +711,8 @@ describe('refresh scope', () => {
 	});
 
 	describe('a PR whose pull ref lags the API head', () => {
-		/* PR 1 is listed and re-read at 11 while its pull ref still shows 19, a commit 11 does not descend from.
-		 * The adapter refuses questions about commits it was not prepared for, as a strict custom adapter would. */
-		const lagging = (failOnPrepare?: number) => {
-			let github: FakeGitHub | undefined;
-			const prepared: Array<{ shas: string[]; optional: string[] | undefined }> = [];
-			const asked: Array<[string, string]> = [];
-			const known = new Set<string>();
-			const adapter: Ancestry = {
-				name: 'api',
-				isAncestor(ancestor, descendant) {
-					if (!known.has(ancestor)) {
-						throw new Error(`ancestry asked about ${ancestor} before it was prepared`);
-					}
-					asked.push([ancestor, descendant]);
-					return Promise.resolve(github?.isAncestor(ancestor, descendant) ?? false);
-				},
-				changedFiles: () => Promise.resolve([]),
-				prepare(input) {
-					prepared.push({ shas: input.shas, optional: input.optional });
-					if (prepared.length === failOnPrepare) {
-						return Promise.reject(new GitHubError('rate-limit', 'custom', 'limited'));
-					}
-					for (const commit of [...input.shas, ...input.refs.map((ref) => ref.sha)]) {
-						if (commit !== null) {
-							known.add(commit);
-						}
-					}
-					return Promise.resolve({
-						heads: input.pulls.length > 0 ? new Map([[1, sha(19)]]) : new Map(),
-					});
-				},
-			};
-			const setup = (gh: FakeGitHub): void => {
-				github = gh;
-				gh.baseline('pr-baseline', sha(4));
-				gh.commit(sha(11), [sha(3)]);
-				gh.commit(sha(12), [sha(3)]);
-				gh.commit(sha(19), [sha(3)]);
-				gh.pull({ number: 1, headSha: sha(11) });
-				gh.pull({ number: 2, headSha: sha(12) });
-			};
-			return { adapter, setup, prepared, asked };
-		};
-
 		it('prepares the API head through shas before asking about it, then evaluates it', async () => {
-			const { adapter, setup, prepared } = lagging();
+			const { adapter, setup, prepared } = laggingAdapter();
 			const { client, github } = harness({ ancestryAdapter: adapter }, setup);
 			const result = await client.refreshPrStatuses();
 			expect(result).toMatchObject({ written: 2, deferred: 0, incomplete: false });
@@ -722,7 +722,7 @@ describe('refresh scope', () => {
 		});
 
 		it('stops on a rate limit from the per-PR prepare instead of rejecting', async () => {
-			const { adapter, setup } = lagging(3);
+			const { adapter, setup } = laggingAdapter(3);
 			const { client } = harness({ ancestryAdapter: adapter }, setup);
 			await expect(client.refreshPrStatuses()).resolves.toMatchObject({
 				incomplete: true,
@@ -731,7 +731,7 @@ describe('refresh scope', () => {
 		});
 
 		it('asks no ancestry question for it once the write budget is spent', async () => {
-			const { adapter, setup, asked } = lagging();
+			const { adapter, setup, asked } = laggingAdapter();
 			const { client } = harness({ ancestryAdapter: adapter, maxWritesPerRun: 1 }, setup);
 			const result = await client.refreshPrStatuses();
 			// The listing is newest first, so PR 2 spends the only write before PR 1 is reached.
