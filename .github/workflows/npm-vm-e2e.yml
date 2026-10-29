@@ -38,7 +38,11 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only "$BASE...HEAD" | grep -qE '^(packages/npm-vm/|actions/npm-vm/|tools/testing/|\.github/workflows/npm-vm-e2e\.yml$)'; then
+            exit 0
+          fi
+          # Captured first so a failing diff fails the job; --no-renames keeps both paths of a move.
+          files=$(git diff --no-renames --name-only "$BASE...HEAD")
+          if printf '%s\n' "$files" | grep -qE '^(packages/npm-vm/|actions/npm-vm/|tools/testing/|\.github/workflows/npm-vm-e2e\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -47,6 +51,8 @@ jobs:
   e2e:
     name: 'npm-vm e2e: ${{ matrix.os }}'
     needs: changes
+    # Runs even when detection failed, so the required checks fail instead of being skipped.
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
     # Gated per step, not per job: a skipped matrix job reports one check under its unexpanded name.
     env:
@@ -56,6 +62,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
+      - name: Require a change detection result
+        if: needs.changes.result != 'success' || (env.RUN_E2E != 'true' && env.RUN_E2E != 'false')
+        shell: bash
+        run: |
+          echo "::error::Change detection did not produce a result; failing instead of skipping the e2e suite."
+          exit 1
       - name: Harden runner
         if: env.RUN_E2E == 'true' && runner.os == 'Linux'
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2
