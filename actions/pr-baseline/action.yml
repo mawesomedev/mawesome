@@ -101,7 +101,7 @@ outputs:
   closed:
     description: Selected PRs that closed while the refresh ran.
   deferred:
-    description: PRs whose head was still moving.
+    description: PRs whose head was still moving, whose pull ref was ahead of the API, or whose head the remote no longer served.
   failed:
     description: PRs whose status could not be written.
   scope:

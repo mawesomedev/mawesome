@@ -63,8 +63,12 @@ export function createGitAncestry(options: GitAncestryOptions): Ancestry {
 					`Fetched ${[...heads.values()].filter((oid) => oid !== null).length} PR heads treelessly.`,
 				);
 			}
-			await ensure(input.shas);
-			return { heads };
+			const optional = new Set(input.optional);
+			await ensure(input.shas.filter((sha) => !optional.has(sha)));
+			if (input.optional === undefined) {
+				return { heads };
+			}
+			return { heads, missing: await fetchOptional(repo, [...optional], options.offline) };
 		},
 	};
 }
@@ -100,6 +104,33 @@ function isMissingOnRemote(error: unknown): boolean {
 		error instanceof GitError &&
 		/couldn't find remote ref|remote ref does not exist|not our ref/i.test(error.stderr)
 	);
+}
+
+/** Fetches each commit on its own, so one the remote no longer serves is reported instead of thrown. */
+async function fetchOptional(
+	repo: GitRepo,
+	shas: string[],
+	offline: boolean | undefined,
+): Promise<string[]> {
+	const missing: string[] = [];
+	for (const sha of shas) {
+		if (await hasCommit(repo, sha)) {
+			continue;
+		}
+		if (offline) {
+			missing.push(sha);
+			continue;
+		}
+		try {
+			await fetchRefs(repo, [sha]);
+		} catch (error) {
+			if (!isMissingOnRemote(error)) {
+				throw error;
+			}
+			missing.push(sha);
+		}
+	}
+	return missing;
 }
 
 /**

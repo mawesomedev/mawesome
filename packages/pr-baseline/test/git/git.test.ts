@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openRepo, type GitRepo } from '../../src/git/repo.ts';
 import { createApiClient } from '../../src/github/api.ts';
@@ -67,6 +67,28 @@ function openPull(number: number, from: string, files: Record<string, string | n
 	world.github.commit(head, [from]);
 	world.github.pull({ number, headSha: head });
 	return head;
+}
+
+/** A new commit off `parent` on PR `number`'s branch: the remote serves it and the API reports it, but the pull ref stays put. */
+function laggingHead(number: number, parent: string, files: Record<string, string | null>): string {
+	world.fixture.checkout(parent, `pr-${number}-${parent.slice(0, 8)}`);
+	const head = world.fixture.commit(`pr ${number} lagging`, files);
+	world.fixture.checkout('main');
+	world.fixture.push(head, `refs/heads/pr-${number}`);
+	world.github.commit(head, [parent]);
+	const pull = world.github.pulls.get(number);
+	if (pull) {
+		pull.headSha = head;
+	}
+	return head;
+}
+
+/** Points the API's head for PR `number` at a commit the remote has never had. */
+function unservedHead(number: number): void {
+	const pull = world.github.pulls.get(number);
+	if (pull) {
+		pull.headSha = 'e'.repeat(39) + String(number);
+	}
 }
 
 beforeEach(() => {
@@ -472,18 +494,13 @@ describe('git ancestry review round 3', () => {
 		expect(world.github.latestStatus(head, 'PR baseline')).toBeNull();
 	});
 
-	it('defers a PR whose pull ref is gone while the API still reports it open', async () => {
+	it('evaluates a PR whose pull ref is gone while both API reads agree on its head', async () => {
 		const [, c2] = world.c;
-		openPull(1, c2 as string, { 'x.txt': 'x' });
+		const head = openPull(1, c2 as string, { 'x.txt': 'x' });
 		world.fixture.deletePull(1);
 		const result = await client().refreshPrStatuses();
-		expect(result).toMatchObject({
-			deferred: 1,
-			closed: 0,
-			incomplete: true,
-			paused: false,
-			reason: 'deferred',
-		});
+		expect(result).toMatchObject({ written: 1, deferred: 0, closed: 0, incomplete: false });
+		expect(world.github.latestStatus(head, 'PR baseline')?.state).toBe('failure');
 	});
 
 	it('calls a deferral a failure even when a budget stopped the run', async () => {
@@ -491,7 +508,7 @@ describe('git ancestry review round 3', () => {
 		openPull(1, c2 as string, { 'x.txt': 'x' });
 		openPull(2, c2 as string, { 'y.txt': 'y' });
 		openPull(3, c2 as string, { 'z.txt': 'z' });
-		world.fixture.deletePull(3);
+		unservedHead(3);
 		const result = await client({ maxWritesPerRun: 1 }).refreshPrStatuses();
 		// The cap would be a pause on its own; the deferred PR is what keeps the run a failure.
 		expect(result).toMatchObject({
@@ -507,7 +524,7 @@ describe('git ancestry review round 3', () => {
 		const [, c2] = world.c;
 		openPull(1, c2 as string, { 'x.txt': 'x' });
 		openPull(2, c2 as string, { 'y.txt': 'y' });
-		world.fixture.deletePull(2);
+		unservedHead(2);
 		const result = await client().refreshPrStatuses();
 		// The deferred PR's next head is unstamped, so no later run revisits it on its own.
 		expect(result).toMatchObject({
@@ -1496,5 +1513,164 @@ describe('move-baseline through a clone', () => {
 		const result = await client({ ancestry: 'api' }).moveBaseline({ force: true });
 		expect(result.moves[0]).toMatchObject({ moved: true, from: c3, to: c4, via: 'api' });
 		expect(world.github.requests(/\/git\/refs\/baselines\/pr-baseline/, 'PATCH')).toHaveLength(1);
+	});
+});
+
+describe('lagging pull refs', () => {
+	it('evaluates the API head when the pull ref is stuck on its parent', async () => {
+		const [, c2] = world.c;
+		const stuck = openPull(1, c2 as string, { 'x.txt': 'x' });
+		const head = laggingHead(1, stuck, { 'x.txt': 'xx' });
+		const result = await client().refreshPrStatuses();
+		expect(result).toMatchObject({ written: 1, deferred: 0, incomplete: false });
+		expect(world.github.latestStatus(head, 'PR baseline')?.state).toBe('failure');
+		expect(world.github.latestStatus(stuck, 'PR baseline')).toBeNull();
+		expect(world.logs.join('\n')).toContain('refs/pull/1/head lags the API head');
+	});
+
+	it('evaluates the new head of a PR pushed between the head fetch and the second listing', async () => {
+		const [, c2] = world.c;
+		const old = openPull(1, c2 as string, { 'x.txt': 'x' });
+		let head = '';
+		let listings = 0;
+		const original = world.github.fetch;
+		world.github.fetch = async (input, init) => {
+			const response = await original(input, init);
+			const url = String(input instanceof Request ? input.url : input);
+			if (url.endsWith('/graphql') && ++listings === 1) {
+				head = laggingHead(1, old, { 'x.txt': 'xx' });
+			}
+			return response;
+		};
+		const result = await client().refreshPrStatuses();
+		expect(result).toMatchObject({ written: 1, deferred: 0, incomplete: false });
+		expect(world.github.latestStatus(head, 'PR baseline')?.state).toBe('failure');
+	});
+
+	it('evaluates a force-pushed head the pull ref has not caught up with', async () => {
+		const [, c2, , c4] = world.c;
+		openPull(1, c2 as string, { 'x.txt': 'x' });
+		const replacement = laggingHead(1, c4 as string, { 'x.txt': 'rebased' });
+		const result = await client().refreshPrStatuses();
+		expect(result).toMatchObject({ written: 1, deferred: 0, incomplete: false });
+		expect(world.github.latestStatus(replacement, 'PR baseline')?.state).toBe('success');
+	});
+
+	it('defers a PR whose pull ref is ahead of both API reads', async () => {
+		const [, c2] = world.c;
+		const listed = openPull(1, c2 as string, { 'x.txt': 'x' });
+		world.fixture.checkout('pr-1');
+		const newer = world.fixture.commit('newer', { 'x.txt': 'xx' });
+		world.fixture.checkout('main');
+		world.fixture.pull(1, newer);
+		const result = await client().refreshPrStatuses();
+		expect(result).toMatchObject({ written: 0, deferred: 1, incomplete: true, reason: 'deferred' });
+		expect(world.github.latestStatus(listed, 'PR baseline')).toBeNull();
+		expect(world.warnings.join('\n')).toContain('PR #1 is still moving');
+	});
+
+	it.each(['auto', 'git'] as const)(
+		'defers a head the remote does not serve without leaving git ancestry (%s)',
+		async (ancestry) => {
+			const [, c2] = world.c;
+			openPull(1, c2 as string, { 'x.txt': 'x' });
+			unservedHead(1);
+			const result = await client({ ancestry }).refreshPrStatuses();
+			expect(result).toMatchObject({ ancestry: 'git', deferred: 1, incomplete: true });
+			expect(world.warnings.join('\n')).toContain('a head the remote does not serve');
+		},
+	);
+
+	it('defers a PR missing from the second listing that REST still reports open', async () => {
+		const [, c2] = world.c;
+		openPull(1, c2 as string, { 'x.txt': 'x' });
+		openPull(2, c2 as string, { 'y.txt': 'y' });
+		let listings = 0;
+		const original = world.github.fetch;
+		world.github.fetch = async (input, init) => {
+			const url = String(input instanceof Request ? input.url : input);
+			const second = url.endsWith('/graphql') && ++listings === 2;
+			const pull = world.github.pulls.get(2);
+			if (second && pull) {
+				pull.state = 'closed';
+			}
+			const response = await original(input, init);
+			if (second && pull) {
+				pull.state = 'open';
+			}
+			return response;
+		};
+		const result = await client().refreshPrStatuses();
+		expect(result).toMatchObject({ written: 1, deferred: 1, closed: 0, incomplete: true });
+	});
+
+	it('writes a head two lagging PRs share once', async () => {
+		const [, c2] = world.c;
+		const stuck = openPull(1, c2 as string, { 'x.txt': 'x' });
+		openPull(2, c2 as string, { 'y.txt': 'y' });
+		const head = laggingHead(1, stuck, { 'x.txt': 'xx' });
+		const pull = world.github.pulls.get(2);
+		if (pull) {
+			pull.headSha = head;
+		}
+		const result = await client().refreshPrStatuses();
+		expect(result).toMatchObject({ written: 1, skipped: 1, deferred: 0, incomplete: false });
+		expect(world.github.requests(/\/statuses\//, 'POST')).toHaveLength(1);
+	});
+
+	describe('when fetching the lagging head fails', () => {
+		/** Breaks the remote once the second listing is in, so only the per-PR prefetch can fail. */
+		const breakRemoteAfterListings = (): void => {
+			let listings = 0;
+			const original = world.github.fetch;
+			world.github.fetch = async (input, init) => {
+				const response = await original(input, init);
+				const url = String(input instanceof Request ? input.url : input);
+				if (url.endsWith('/graphql') && ++listings === 2) {
+					renameSync(world.fixture.remoteDir, `${world.fixture.remoteDir}-gone`);
+				}
+				return response;
+			};
+		};
+
+		afterEach(() => {
+			if (existsSync(`${world.fixture.remoteDir}-gone`)) {
+				renameSync(`${world.fixture.remoteDir}-gone`, world.fixture.remoteDir);
+			}
+		});
+
+		it('falls back to API ancestry under auto and still evaluates the head', async () => {
+			const [, c2] = world.c;
+			const stuck = openPull(1, c2 as string, { 'x.txt': 'x' });
+			const head = laggingHead(1, stuck, { 'x.txt': 'xx' });
+			breakRemoteAfterListings();
+			const result = await client().refreshPrStatuses();
+			expect(result).toMatchObject({ ancestry: 'api', written: 1, deferred: 0, incomplete: false });
+			expect(world.github.latestStatus(head, 'PR baseline')?.state).toBe('failure');
+			expect(world.github.requests(/compare/).length).toBeGreaterThan(0);
+		});
+
+		it('fails the run under forced git ancestry', async () => {
+			const [, c2] = world.c;
+			const stuck = openPull(1, c2 as string, { 'x.txt': 'x' });
+			laggingHead(1, stuck, { 'x.txt': 'xx' });
+			breakRemoteAfterListings();
+			await expect(client({ ancestry: 'git' }).refreshPrStatuses()).rejects.toThrow();
+		});
+
+		it('stops on a rate limit from the descendant check after the fallback', async () => {
+			const [, c2] = world.c;
+			const stuck = openPull(1, c2 as string, { 'x.txt': 'x' });
+			const head = laggingHead(1, stuck, { 'x.txt': 'xx' });
+			breakRemoteAfterListings();
+			world.github.overrides.push({
+				path: /\/compare\//,
+				status: 403,
+				headers: { 'x-ratelimit-remaining': '0' },
+			});
+			const result = await client().refreshPrStatuses();
+			expect(result).toMatchObject({ written: 0, incomplete: true, reason: 'rate-limit' });
+			expect(world.github.latestStatus(head, 'PR baseline')).toBeNull();
+		});
 	});
 });
