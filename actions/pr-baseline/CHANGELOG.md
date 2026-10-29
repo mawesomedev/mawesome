@@ -1,5 +1,16 @@
 # @mawesome/pr-baseline-action
 
+## 0.4.0
+
+### Minor Changes
+
+- [#120](https://github.com/mawesomedev/mawesome/pull/120) [`c607948`](https://github.com/mawesomedev/mawesome/commit/c60794809ae32bd78608ea8689697b92619a6fe8) Thanks [@manzoorwanijk](https://github.com/manzoorwanijk)! - A refresh evaluates a PR at the head the API reports when its pull ref lags behind, instead of deferring it and failing the run.
+
+### Patch Changes
+
+- Updated dependencies [[`c607948`](https://github.com/mawesomedev/mawesome/commit/c60794809ae32bd78608ea8689697b92619a6fe8)]:
+  - @mawesome/pr-baseline@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
