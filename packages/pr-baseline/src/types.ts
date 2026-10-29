@@ -68,11 +68,15 @@ export interface PrepareInput {
 	pulls: number[];
 	/** Every baseline with the SHA the API reported, null when absent; an adapter with its own view must agree. */
 	refs: Array<{ name: string; sha: string | null }>;
+	/** The commits of `shas` the remote may no longer serve; those are reported in `missing` instead of failing. */
+	optional?: string[];
 }
 
 export interface PrepareResult {
 	/** Each PR's head as the adapter sees it now; null when the PR's ref is gone. Empty for adapters that cannot tell. */
 	heads: Map<number, string | null>;
+	/** The `optional` commits the remote does not serve; absent when the adapter cannot tell. */
+	missing?: string[];
 }
 
 /** Answers ancestry and changed-file questions for commits of one repository. */
@@ -88,7 +92,7 @@ export interface Ancestry {
 	changedFiles(from: string, to: string): Promise<string[] | null>;
 	/**
 	 * Optional batch step run before the commits it names are asked about; adapters without one are asked commit by commit.
-	 * `refresh-pr-statuses` calls it twice: once for the base head, then once for the PR heads its scope selected.
+	 * `refresh-pr-statuses` calls it for the base head, then for the PR heads its scope selected, then once per PR whose pull ref lags the API head.
 	 */
 	prepare?(input: PrepareInput): Promise<PrepareResult>;
 }

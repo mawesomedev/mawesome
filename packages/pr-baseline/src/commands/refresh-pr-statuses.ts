@@ -251,7 +251,8 @@ export async function runRefreshPrStatuses(
 			for (const pull of inScope) {
 				if (!stillOpen.has(pull.number)) {
 					// Gone from the listing: closed, retargeted, turned draft, or a listing race; REST says which.
-					const outcome = (await reconcile(runtime, pull, null, base)) ?? 'deferred';
+					const reconciled = await reconcile(runtime, pull, null, base);
+					const outcome = reconciled === null || reconciled === 'lagging' ? 'deferred' : reconciled;
 					counts[outcome]++;
 					entries.push(entry(pull, outcome));
 				}
@@ -362,6 +363,38 @@ export async function runRefreshPrStatuses(
 			return true;
 		}
 	};
+	/**
+	 * Settles a PR whose two API reads agree on a head its pull ref does not show.
+	 * Returns `evaluate` unless the head is gone from the remote or the ref is ahead of it.
+	 */
+	const lagging = async (
+		listed: OpenPull,
+		fetched: string | null,
+	): Promise<'evaluate' | 'deferred' | 'stopped'> => {
+		const prepared = await ancestry.prepare?.({
+			shas: [listed.headSha],
+			pulls: [],
+			refs: [],
+			optional: [listed.headSha],
+		});
+		if (prepared?.missing?.includes(listed.headSha)) {
+			logger.warn(
+				`PR #${listed.number} is at a head the remote does not serve; deferred to the next run.`,
+			);
+			return 'deferred';
+		}
+		const probe = budget.next(api.rest.remaining);
+		if (!probe.ok) {
+			reason = probe.reason;
+			return 'stopped';
+		}
+		// A ref ahead of both API reads means they are the stale ones, and its newer head would go unstamped.
+		if (fetched !== null && (await ancestry.isAncestor(listed.headSha, fetched))) {
+			logger.warn(`PR #${listed.number} is still moving; deferred to the next run.`);
+			return 'deferred';
+		}
+		return 'evaluate';
+	};
 	for (const listed of inScope) {
 		/*
 		 * The listing and the fetch can disagree when a PR moved or closed in between.
@@ -371,9 +404,12 @@ export async function runRefreshPrStatuses(
 		let reconciled = false;
 		const fetched = heads?.get(listed.number);
 		if (fetched !== undefined && fetched !== listed.headSha) {
-			let settledAs: Reconciled;
+			let settledAs: Reconciled | 'evaluate' | 'stopped';
 			try {
-				settledAs = await reconcile(runtime, listed, fetched, base);
+				settledAs = await reconcile(runtime, listed, fetched, base, listed.headSha);
+				if (settledAs === 'lagging') {
+					settledAs = await lagging(listed, fetched);
+				}
 			} catch (error) {
 				if (isGitHubError(error, 'rate-limit')) {
 					reason = 'rate-limit';
@@ -381,13 +417,21 @@ export async function runRefreshPrStatuses(
 				}
 				throw error;
 			}
-			if (settledAs !== null) {
+			if (settledAs === 'stopped') {
+				break;
+			}
+			if (settledAs === 'evaluate') {
+				logger.info(
+					`PR #${listed.number}: refs/pull/${listed.number}/head lags the API head; evaluating ${listed.headSha.slice(0, 12)}.`,
+				);
+			} else if (settledAs !== null) {
 				counts[settledAs]++;
 				entries.push(entry(listed, settledAs));
 				continue;
+			} else {
+				pull = { ...listed, headSha: fetched as string, status: null };
+				reconciled = true;
 			}
-			pull = { ...listed, headSha: fetched as string, status: null };
-			reconciled = true;
 		}
 		const waiting = cosmetic.get(pull.headSha);
 		if (waiting !== undefined) {
@@ -541,17 +585,19 @@ function selects(pull: OpenPull, scope: RefreshScope): boolean {
 	return scope === 'corrections' ? pull.status?.state === 'success' : pull.status === null;
 }
 
-type Reconciled = 'closed' | 'deferred' | 'outOfScope' | null;
+type Reconciled = 'closed' | 'deferred' | 'outOfScope' | 'lagging' | null;
 
 /**
  * Decides a PR the listing and the fetch disagree about, through one REST read.
  * Returns why it cannot be evaluated, or null when the fetched head is its stable open in-scope head.
+ * With `agreed`, the second listing's head, it returns `lagging` when REST agrees with it and only the pull ref differs.
  */
 async function reconcile(
 	runtime: Runtime,
 	listed: OpenPull,
 	fetched: string | null,
 	base: string,
+	agreed?: string,
 ): Promise<Reconciled> {
 	const current = await getPull(runtime.api, runtime.config.repo, listed.number);
 	if (current === null || current.state !== 'open') {
@@ -561,15 +607,18 @@ async function reconcile(
 		runtime.logger.info(`PR #${listed.number} left the refresh's scope while it was preparing.`);
 		return 'outOfScope';
 	}
+	if (fetched !== null && current.headSha === fetched) {
+		return null;
+	}
+	if (agreed !== undefined && current.headSha === agreed) {
+		return 'lagging';
+	}
 	if (fetched === null) {
 		// The pull ref is gone but the PR is open: an in-flight change; the next run sees it settled.
 		runtime.logger.warn(
 			`PR #${listed.number} has no pull ref right now; deferred to the next run.`,
 		);
 		return 'deferred';
-	}
-	if (current.headSha === fetched) {
-		return null;
 	}
 	runtime.logger.warn(`PR #${listed.number} is still moving; deferred to the next run.`);
 	return 'deferred';

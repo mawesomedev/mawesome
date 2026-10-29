@@ -28,7 +28,7 @@ The default `corrections` scope visits only PRs showing green, which is sound be
 | A baseline removed from the configuration, or its `scope` narrowed                                                                                              | fail to pass                                                                       |
 | The status context renamed                                                                                                                                      | every PR becomes unstamped                                                         |
 | The ancestry adapter changing its answer for a scoped baseline (the API compare caps at 300 files and returns nothing, which makes every scoped baseline apply) | fail to pass                                                                       |
-| A PR deferred while its head was moving, whose new head carries no status                                                                                       | becomes unstamped; the next push stamps it, or a `--scope unstamped` backfill does |
+| A PR deferred while its head was moving or not served by the remote, whose new head carries no status                                                           | becomes unstamped; the next push stamps it, or a `--scope unstamped` backfill does |
 
 A forced move, a baseline off the base branch and a custom reporter each force `all` on their own, so no rule is needed for them.
 
